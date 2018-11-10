@@ -1,2 +1,2 @@
 # helm-spray
-Helm plugin for upgrading sub-charts from an umbrella-chart with dependency orders
+Helm plugin for upgrading sub-charts from umbrella chart with dependency orders.
