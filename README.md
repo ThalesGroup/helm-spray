@@ -2,6 +2,7 @@
 
 [![Build Status](https://api.travis-ci.com/gemalto/helm-spray.svg?branch=master)](https://travis-ci.com/gemalto/helm-spray)
 
+![helm-spray](https://gemalto.github.io/helm-spray/logo/helm-spray_150x150.png)
 
 ## What is helm Spray?
 
