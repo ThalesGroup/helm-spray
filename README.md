@@ -29,7 +29,8 @@ Helm Spray is building and delivering under Travis.
       --dry-run            simulate a spray
   -h, --help               help for helm
   -n, --namespace string   namespace to spray the chart into. (default "default")
-      --set string         set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
+      --set string         set values on the command line (can specify multiple or 
+                           separate values with commas: key1=val1,key2=val2)
   -f, --values string      specify values in a YAML file or a URL (can specify multiple)
 ```
 
