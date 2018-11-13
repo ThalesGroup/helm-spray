@@ -10,13 +10,6 @@ go_import_path: github.com/gemalto/helm-spray
 script:
   - make dist_linux
 
-before_deploy:
-- git config --local user.name "Travis CI"
-- git config --local user.email "travis@travis-ci.org"
-- export TRAVIS_TAG=$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)
-- git tag "$TRAVIS_TAG" "$TRAVIS_COMMIT"
-- git push origin --tags
-
 deploy:
   - provider: releases
     tag_name: $TRAVIS_TAG
