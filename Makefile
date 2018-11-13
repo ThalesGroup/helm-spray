@@ -15,19 +15,3 @@ dist:
 	tar -zcvf $(DIST)/${BINARY}_darwin_$(VERSION).tar.gz $(BINARY) README.md LICENSE plugin.yaml
 	GOOS=windows GOARCH=amd64 go build -o $(BINARY).exe -ldflags $(LDFLAGS) main.go
 	tar -zcvf $(DIST)/${BINARY}_windows_$(VERSION).tar.gz $(BINARY).exe README.md LICENSE plugin.yaml
-
-.PHONY: test-all
-test-all: vet lint test
-
-.PHONY: test
-test:
-	go test -v -parallel=4 ./...
-
-.PHONY: lint
-lint:
-	@go get -u golang.org/x/lint/golint
-	go list ./... | xargs -n1 $${HOME}/go/bin/golint
-
-.PHONY: vet
-vet:
-	go vet ./...
