@@ -13,11 +13,13 @@ script:
 before_deploy:
 - git config --local user.name "Travis CI"
 - git config --local user.email "travis@travis-ci.org"
-- git tag "$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"
+- export TRAVIS_TAG=$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)
+- git tag "$TRAVIS_TAG"
 - git push origin --tags
 
 deploy:
   - provider: releases
+    tag_name: $TRAVIS_TAG
     api_key: $GITHUB_API_KEY
     file: _dist/helm-spray*
     skip_cleanup: true
