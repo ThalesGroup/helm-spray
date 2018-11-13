@@ -13,7 +13,7 @@ dist_linux:
 	GOOS=linux GOARCH=amd64 go get -t -v "./..."
 	GOOS=linux GOARCH=amd64 go build -o ${TMP}/helm-spray/$(BINARY) -ldflags $(LDFLAGS) main.go
 	cp README.md LICENSE plugin.yaml ${TMP}/helm-spray
-	tar -zcvf $(DIST)/${BINARY}_linux_$(VERSION).tar.gz -C ${TMP} *
+	tar -zcvf $(DIST)/${BINARY}_linux_$(VERSION).tar.gz -C ${TMP} ${TMP}/*
 dist_win:
 	GOOS=windows GOARCH=amd64 go get -t -v "./..."
 	GOOS=windows GOARCH=amd64 go build -o $(BINARY).exe -ldflags $(LDFLAGS) main.go
