@@ -65,3 +65,10 @@ $ SKIP_BIN_INSTALL=1 helm plugin install $GOPATH/src/github.com/gemalto/helm-spr
 
 That last command will skip fetching the binary install and use the one you
 built.
+
+
+
+
+
+
+
