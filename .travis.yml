@@ -3,15 +3,16 @@ language: go
 go:
   - 1.10.x
 
+go_import_path: github.com/gemalto/gokube
+
 script:
-  - make test-all
-  - make dist
+- make dist
 
 deploy:
-  - provider: releases
-    api_key: ${GITHUB_TOKEN}
-    file: _dist/helm-spray*
-    skip_cleanup: true
-    file_glob: true
-    on:
-      tags: true
+- provider: releases
+  api_key: ${GITHUB_TOKEN}
+  file: _dist/helm-spray*
+  skip_cleanup: true
+  file_glob: true
+  on:
+    tags: true
