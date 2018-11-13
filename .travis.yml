@@ -13,7 +13,8 @@ script:
 before_deploy:
 - git config --local user.name "Travis CI"
 - git config --local user.email "travis@travis-ci.org"
-- git tag 1.0
+- git tag "$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"
+- git push origin --tags
 
 deploy:
   - provider: releases
