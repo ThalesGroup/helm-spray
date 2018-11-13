@@ -10,11 +10,17 @@ go_import_path: github.com/gemalto/helm-spray
 script:
   - make dist_linux
 
+before_deploy:
+- git config --local user.name "Travis CI"
+- git config --local user.email "travis@travis-ci.org"
+- git tag $RELEASE_NUMBER
+
 deploy:
   - provider: releases
-    api_key: ${GITHUB_TOKEN}
+    api_key: $GITHUB_API_KEY
     file: _dist/helm-spray*
     skip_cleanup: true
     file_glob: true
     on:
+      repo: cvila84/helm-spray
       tags: true
