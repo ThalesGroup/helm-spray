@@ -7,6 +7,7 @@ BINARY := "helm-spray"
 
 .PHONY: dist
 dist:
+    echo dummy
 	mkdir -p $(DIST)
     go get -t -v "./..."
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY) -ldflags $(LDFLAGS) main.go
