@@ -1,7 +1,11 @@
+os: linux
+
 language: go
 
 go:
   - master
+
+go_import_path: github.com/gemalto/helm-spray
 
 script:
   - make test-all
