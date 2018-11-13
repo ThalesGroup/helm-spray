@@ -13,7 +13,7 @@ script:
 before_deploy:
 - git config --local user.name "Travis CI"
 - git config --local user.email "travis@travis-ci.org"
-- git tag $RELEASE_NUMBER
+- git tag 1.0
 
 deploy:
   - provider: releases
@@ -23,4 +23,3 @@ deploy:
     file_glob: true
     on:
       repo: cvila84/helm-spray
-      tags: true
