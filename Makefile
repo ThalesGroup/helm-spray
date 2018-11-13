@@ -7,6 +7,7 @@ BINARY := "helm-spray"
 
 .PHONY: dist
 dist:
+    go get ./...
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY) -ldflags $(LDFLAGS) main.go
 	tar -zcvf $(DIST)/${BINARY}_linux_$(VERSION).tar.gz $(BINARY) README.md LICENSE plugin.yaml
