@@ -8,7 +8,6 @@ go:
 go_import_path: github.com/gemalto/helm-spray
 
 script:
-  - make test-all
   - make dist
 
 deploy:
