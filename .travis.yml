@@ -23,3 +23,4 @@ deploy:
     file_glob: true
     on:
       repo: cvila84/helm-spray
+      tags: true
