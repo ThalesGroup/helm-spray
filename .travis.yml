@@ -3,7 +3,7 @@ os: linux
 language: go
 
 go:
-  - master
+- 1.10.x
 
 go_import_path: github.com/gemalto/helm-spray
 
