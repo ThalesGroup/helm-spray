@@ -124,6 +124,13 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
 	f.BoolVar(&p.debug, "debug", false, "enable verbose output")
 	f.Parse(args)
+
+    if !p.debug {
+        if "1" == os.Getenv("HELM_DEBUG") {
+            p.debug = true
+        }
+    }
+
 	return cmd
 
 }
