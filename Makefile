@@ -5,9 +5,6 @@ DIST := $(CURDIR)/_dist
 LDFLAGS := "-X main.version=${VERSION}"
 BINARY := "helm-spray"
 
-# go mod ftw
-unexport GOPATH
-
 .PHONY: dist
 dist:
 	mkdir -p $(DIST)
