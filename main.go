@@ -31,9 +31,10 @@ type sprayCmd struct {
 	chartName    string
 	chartVersion string
 	namespace    string
-	valuesFile   string
+	valueFiles   []string
 	valuesSet    string
 	dryRun       bool
+	debug        bool
 }
 
 // Dependency ...
@@ -116,12 +117,20 @@ func newSprayCmd(args []string) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.StringVarP(&p.valuesFile, "values", "f", "", "specify values in a YAML file or a URL (can specify multiple)")
+	f.StringSliceVarP(&p.valueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
 	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into.")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
+	f.BoolVar(&p.debug, "debug", false, "enable verbose output")
 	f.Parse(args)
+
+    if !p.debug {
+        if "1" == os.Getenv("HELM_DEBUG") {
+            p.debug = true
+        }
+    }
+
 	return cmd
 
 }
@@ -165,16 +174,16 @@ func (p *sprayCmd) spray() error {
 	}
 
 	// For debug...
-	/*
+    if p.debug {
 		for _, dependency := range dependencies {
 			fmt.Printf("dependencies: %s | %d\n", dependency.Name, dependency.Weight)
 		}
-	*/
+    }
 
 	for i := 0; i <= getMaxWeight(dependencies); i++ {
 		for _, dependency := range dependencies {
 			if dependency.Weight == i {
-				helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valuesFile, p.valuesSet, p.dryRun)
+				helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valueFiles, p.valuesSet, p.dryRun, p.debug)
 				status := helm.GetHelmStatus(dependency.Name)
 				if status != "DEPLOYED" && !p.dryRun {
 					os.Exit(1)
