@@ -21,4 +21,4 @@ deploy:
   file_glob: true
   on:
     repo: gemalto/helm-spray
-    tags: false
+    tags: true
