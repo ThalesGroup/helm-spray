@@ -1,23 +1,18 @@
-os: linux
-
 language: go
 
 go:
-- 1.10.x
+  - 1.10.x
 
-go_import_path: github.com/gemalto/helm-spray
+go_import_path: github.com/gemalto/gokube
 
 script:
-  - make dist_linux
+- make dist
 
 deploy:
-  - provider: releases
-    tag_name: $TRAVIS_TAG
-    target_commitish: $TRAVIS_COMMIT
-    api_key: $GITHUB_API_KEY
-    file: _dist/helm-spray*
-    skip_cleanup: true
-    file_glob: true
-    on:
-      repo: cvila84/helm-spray
-      tags: true
+- provider: releases
+  api_key: ${GITHUB_TOKEN}
+  file: _dist/helm-spray*
+  skip_cleanup: true
+  file_glob: true
+  on:
+    tags: true
