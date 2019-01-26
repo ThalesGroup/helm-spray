@@ -1,9 +1,14 @@
+os: linux
+
 language: go
 
 go:
   - 1.10.x
 
-go_import_path: github.com/gemalto/gokube
+go_import_path: github.com/gemalto/helm-spray
+
+notifications:
+  email: true
 
 script:
 - make dist
