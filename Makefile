@@ -10,7 +10,11 @@ dist:
 	GOOS=linux GOARCH=amd64 go get -t -v ./...
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY) -ldflags $(LDFLAGS) main.go
 	tar -cvf $(DIST)/${BINARY}_linux_$(VERSION).tar $(BINARY) README.md LICENSE
+	pwd
 	cd linux
+	pwd
+	ls -l
+	ls -l plugin.yaml
 	tar -uvf $(DIST)/${BINARY}_linux_$(VERSION).tar plugin.yaml
 	gzip $(DIST)/${BINARY}_linux_$(VERSION).tar
 	GOOS=windows GOARCH=amd64 go get -t -v ./...
