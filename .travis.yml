@@ -3,7 +3,9 @@ language: go
 go:
   - 1.10.x
 
-go_import_path: github.com/gemalto/gokube
+go_import_path: github.com/gemalto/helm-spray
+
+install:
 
 script:
 - make dist
@@ -15,4 +17,5 @@ deploy:
   skip_cleanup: true
   file_glob: true
   on:
+    repo: gemalto/helm-spray
     tags: true
