@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - 1.10.x
+- 1.10.x
 
 go_import_path: github.com/gemalto/helm-spray
 
@@ -11,12 +11,7 @@ script:
 - make dist
 
 after_success:
-- export TRAVIS_TAG=$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)
-
-before_deploy:
-- git config --local user.name "Travis CI"
-- git config --local user.email "travis@travis-ci.org"
-- git tag "$TRAVIS_TAG" "$TRAVIS_COMMIT"
+- export TRAVIS_TAG="v1.0"
 
 deploy:
 - provider: releases
@@ -25,5 +20,4 @@ deploy:
   skip_cleanup: true
   file_glob: true
   on:
-    repo: cvila84/helm-spray
     tags: true
