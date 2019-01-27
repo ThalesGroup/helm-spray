@@ -17,11 +17,10 @@ before_deploy:
 - git config --local user.name "Travis CI"
 - git config --local user.email "travis@travis-ci.org"
 - git tag "$TRAVIS_TAG" "$TRAVIS_COMMIT"
-- git push origin --tags
 
 deploy:
 - provider: releases
-  api_key: ${GITHUB_TOKEN}
+  api_key: ${GITHUB_API_KEY}
   file: _dist/helm-spray*
   skip_cleanup: true
   file_glob: true
