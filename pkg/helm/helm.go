@@ -96,7 +96,7 @@ func Delete(chart string, dryRun bool) {
 
 // UpgradeWithValues ...
 func UpgradeWithValues(namespace string, release string, chartName string, chartPath string, valueFiles []string, valuesSet string, dryRun bool, debug bool) {
-	var myargs []string = []string{"upgrade", "--install", release, chartPath, "--namespace", namespace, "--set", chartName + ".enabled=true," + valuesSet}
+	var myargs []string = []string{"upgrade", "--install", release, chartPath, "--namespace", namespace, "--set", valuesSet}
     for _, v := range valueFiles {
         myargs = append(myargs, "-f")
         myargs = append(myargs, v)
@@ -106,12 +106,17 @@ func UpgradeWithValues(namespace string, release string, chartName string, chart
     }
 
     if debug {
-        fmt.Printf("running command for %s: %v\n", release, myargs)
+        myargs = append(myargs, "--debug")
+        fmt.Printf("[spray] running helm command for \"%s\": %v\n", release, myargs)
     }
 
 	cmd := exec.Command("helm", myargs...)
-	cmdOutput := &bytes.Buffer{}
-	cmd.Stdout = cmdOutput
+    if debug {
+	    cmd.Stdout = os.Stdout
+    } else {
+	    cmdOutput := &bytes.Buffer{}
+    	cmd.Stdout = cmdOutput
+    }
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
@@ -131,12 +136,17 @@ func Upgrade(namespace string, chart string, chartPath string, valuesSet string,
 	}
 
     if debug {
-        fmt.Printf("running command: %v\n", myargs)
+        myargs = append(myargs, "--debug")
+        fmt.Printf("[spray] running command: %v\n", myargs)
     }
 
 	cmd := exec.Command("helm", myargs...)
-	cmdOutput := &bytes.Buffer{}
-	cmd.Stdout = cmdOutput
+    if debug {
+        cmd.Stdout = os.Stdout
+    } else {
+	    cmdOutput := &bytes.Buffer{}
+    	cmd.Stdout = cmdOutput
+    }
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
@@ -160,7 +170,7 @@ func GetHelmStatus(chart string) string {
 
 // Fetch ...
 func Fetch(chart string, version string) {
-	fmt.Println("Fetching chart " + chart + " version " + version + " ...")
+	fmt.Println("[spray] Fetching chart " + chart + " version " + version + " ...")
 	cmd := exec.Command("helm", "fetch", chart, "--version", version)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
