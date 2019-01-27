@@ -10,10 +10,12 @@ install:
 script:
 - make dist
 
+after_success:
+- export TRAVIS_TAG=$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)
+
 before_deploy:
 - git config --local user.name "Travis CI"
 - git config --local user.email "travis@travis-ci.org"
-- export TRAVIS_TAG=$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)
 - git tag "$TRAVIS_TAG" "$TRAVIS_COMMIT"
 - git push origin --tags
 
