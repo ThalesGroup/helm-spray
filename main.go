@@ -207,6 +207,7 @@ func (p *sprayCmd) spray() error {
 		for _, dependency := range dependencies {
             if dependency.Targetable {
 	    		if dependency.Weight == i {
+	    			fmt.Println("[spray] upgrading release: \"" + dependency.Name + "\"...")
                     shouldWait = true
 
                     // Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
