@@ -6,7 +6,8 @@ TAR_WINDOWS := "helm-spray_windows_${VERSION}.tgz"
 BINARY_LINUX := "helm-spray"
 BINARY_WINDOWS := "helm-spray.exe"
 
-.PHONY: dist_linux
+.PHONY: dist
+dist: dist_linux dist_windows
 dist_linux:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=amd64 go get -t -v ./...
