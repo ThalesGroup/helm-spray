@@ -1,8 +1,8 @@
 VERSION := "v3.2.0"
 DIST := $(CURDIR)/_dist
 LDFLAGS := "-X main.version=${VERSION}"
-TAR_LINUX := "helm-spray_linux_${VERSION}.tgz"
-TAR_WINDOWS := "helm-spray_windows_${VERSION}.tgz"
+TAR_LINUX := "helm-spray-${VERSION}-linux-amd64.tgz"
+TAR_WINDOWS := "helm-spray-${VERSION}-windows-amd64.tgz"
 BINARY_LINUX := "helm-spray"
 BINARY_WINDOWS := "helm-spray.exe"
 
