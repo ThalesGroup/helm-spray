@@ -103,11 +103,11 @@ func UpgradeWithValues(namespace string, release string, chartName string, chart
     }
 
     if resetValues {
-        myargs = append(myargs, "--resetValues")
+        myargs = append(myargs, "--reset-values")
     }
 
     if reuseValues {
-        myargs = append(myargs, "--reuseValues")
+        myargs = append(myargs, "--reuse-values")
     }
 
     if force {
