@@ -1,4 +1,4 @@
-VERSION := "v1.0"
+VERSION := "v3.2.0"
 DIST := $(CURDIR)/_dist
 LDFLAGS := "-X main.version=${VERSION}"
 TAR_LINUX := "helm-spray_linux_${VERSION}.tgz"
