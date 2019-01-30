@@ -32,6 +32,8 @@ type sprayCmd struct {
 	chartVersion string
 	targets      []string
 	namespace    string
+    resetValues  bool
+    reuseValues  bool
 	valueFiles   []string
 	valuesSet    string
 	force        bool
@@ -42,7 +44,9 @@ type sprayCmd struct {
 // Dependency ...
 type Dependency struct {
 	Name        string
-	Targetable  bool
+	Alias       string
+	UsedName    string
+	Targeted    bool
 	Weight      int
 }
 
@@ -124,6 +128,8 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into.")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
 	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If --target is not specified, all subcharts are targeted")
+	f.BoolVar(&p.resetValues, "reset-values", false, "when upgrading, reset the values to the ones built into the chart")
+	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via --set and -f. If '--reset-values' is specified, this is ignored.")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
@@ -164,28 +170,32 @@ func (p *sprayCmd) spray() error {
 	dependencies := make([]Dependency, len(reqs.Dependencies))
 
 	for i, req := range reqs.Dependencies {
-        // Dependency name
+        // Dependency name and alias
 		dependencies[i].Name = req.Name
+		dependencies[i].Alias = req.Alias
+        if req.Alias == "" {
+		    dependencies[i].UsedName = dependencies[i].Name
+        } else {
+		    dependencies[i].UsedName = dependencies[i].Alias
+        }
 
-        // Is dependency targetable? If --target is specificed, it should match the name of the current dependency; 
-        // if no --target is specified, then all dependencies are targetable
+        // Is dependency targeted? If --target is specificed, it should match the name of the current dependency; 
+        // if no --target is specified, then all dependencies are targeted
         if len(p.targets) > 0 {
-            dependencies[i].Targetable = false
+            dependencies[i].Targeted = false
             for j := range p.targets {
-                if p.targets[j] == dependencies[i].Name {
-                    dependencies[i].Targetable = true
+                if p.targets[j] == dependencies[i].UsedName {
+                    dependencies[i].Targeted = true
                 }
             }
         } else {
-            dependencies[i].Targetable = true
+            dependencies[i].Targeted = true
         }
 
-        // Get weight of the dependency
-		depi, err := values.Table(req.Name)
-		if err != nil {
-			panic(fmt.Errorf("%s", err))
-		}
-		if depi["weight"] != nil {
+        // Get weight of the dependency. If no weight is specified, setting it to 0
+        dependencies[i].Weight = 0
+		depi, err := values.Table(dependencies[i].UsedName)
+		if (err == nil && depi["weight"] != nil) {
 			w64 := depi["weight"].(float64)
 			w, err := strconv.Atoi(strconv.FormatFloat(w64, 'f', 0, 64))
 			if err != nil {
@@ -198,42 +208,46 @@ func (p *sprayCmd) spray() error {
 	// For debug...
     if p.debug {
 		for _, dependency := range dependencies {
-			fmt.Printf("[spray] subchart: \"%s\" | targetable: %t | weight: %d\n", dependency.Name, dependency.Targetable, dependency.Weight)
+            if dependency.Alias == "" {
+    			fmt.Printf("[spray] subchart: \"%s\" | targeted: %t | weight: %d\n", dependency.Name, dependency.Targeted, dependency.Weight)
+            } else {
+    			fmt.Printf("[spray] subchart: \"%s\" (is alias of: \"%s\") | targeted: %t | weight: %d\n", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight)
+            }
 		}
     }
 
 	for i := 0; i <= getMaxWeight(dependencies); i++ {
         shouldWait := false
 
-        // Upgrade the (targetable) Deployments, following the increasing weight
+        // Upgrade the current (targeted) Deployments, following the increasing weight
 		for _, dependency := range dependencies {
-            if dependency.Targetable {
+            if dependency.Targeted {
 	    		if dependency.Weight == i {
-	    			fmt.Println("[spray] upgrading release: \"" + dependency.Name + "\"...")
+	    			fmt.Println("[spray] upgrading release: \"" + dependency.UsedName + "\"...")
                     shouldWait = true
 
                     // Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
                     valuesSet := ""
                     for _, dep := range dependencies {
-                        if dep.Name == dependency.Name {
-                            valuesSet = valuesSet + dep.Name + ".enabled=true,"
+                        if dep.UsedName == dependency.UsedName {
+                            valuesSet = valuesSet + dep.UsedName + ".enabled=true,"
                         } else {
-                            valuesSet = valuesSet + dep.Name + ".enabled=false,"
+                            valuesSet = valuesSet + dep.UsedName + ".enabled=false,"
                         }
                     }
                     valuesSet = valuesSet + p.valuesSet
 
                     // Upgrade the Deployment
-	    			helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
+	    			helm.UpgradeWithValues(p.namespace, dependency.UsedName, dependency.UsedName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
 
                     if !p.dryRun {
-        				status := helm.GetHelmStatus(dependency.Name)
+        				status := helm.GetHelmStatus(dependency.UsedName)
 	    			    if status != "DEPLOYED" {
 		    	    		os.Exit(1)
                         }
 		    		}
 
-	    			fmt.Println("[spray] release: \"" + dependency.Name + "\" upgraded")
+	    			fmt.Println("[spray] release: \"" + dependency.UsedName + "\" upgraded")
     			}
             }
 		}
@@ -246,7 +260,7 @@ func (p *sprayCmd) spray() error {
     	    	for _, dependency := range dependencies {
 	    	    	if i > 0 && dependency.Weight == i {
 		    	    	for {
-			    		    if kubectl.IsDeploymentUpToDate(dependency.Name, p.namespace) {
+			    		    if kubectl.IsDeploymentUpToDate(dependency.UsedName, p.namespace) {
 				        		break
 			    	    	}
 		    			    time.Sleep(5 * time.Second)
