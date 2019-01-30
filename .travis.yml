@@ -10,9 +10,6 @@ install:
 script:
 - make dist
 
-after_success:
-- export TRAVIS_TAG="v1.0"
-
 deploy:
 - provider: releases
   api_key: ${GITHUB_API_KEY}
