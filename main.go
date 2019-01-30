@@ -30,16 +30,19 @@ import (
 type sprayCmd struct {
 	chartName    string
 	chartVersion string
+	targets      []string
 	namespace    string
-	valuesFile   string
+	valueFiles   []string
 	valuesSet    string
 	dryRun       bool
+	debug        bool
 }
 
 // Dependency ...
 type Dependency struct {
-	Name   string
-	Weight int
+	Name        string
+	Targetable  bool
+	Weight      int
 }
 
 var (
@@ -116,12 +119,22 @@ func newSprayCmd(args []string) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.StringVarP(&p.valuesFile, "values", "f", "", "specify values in a YAML file or a URL (can specify multiple)")
+	f.StringSliceVarP(&p.valueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
 	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into.")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
+	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If --target is not specified, all subcharts are targeted")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
+	f.BoolVar(&p.debug, "debug", false, "enable verbose output")
 	f.Parse(args)
+
+    // When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
+    if !p.debug {
+        if "1" == os.Getenv("HELM_DEBUG") {
+            p.debug = true
+        }
+    }
+
 	return cmd
 
 }
@@ -149,7 +162,23 @@ func (p *sprayCmd) spray() error {
 	dependencies := make([]Dependency, len(reqs.Dependencies))
 
 	for i, req := range reqs.Dependencies {
+        // Dependency name
 		dependencies[i].Name = req.Name
+
+        // Is dependency targetable? If --target is specificed, it should match the name of the current dependency; 
+        // if no --target is specified, then all dependencies are targetable
+        if len(p.targets) > 0 {
+            dependencies[i].Targetable = false
+            for j := range p.targets {
+                if p.targets[j] == dependencies[i].Name {
+                    dependencies[i].Targetable = true
+                }
+            }
+        } else {
+            dependencies[i].Targetable = true
+        }
+
+        // Get weight of the dependency
 		depi, err := values.Table(req.Name)
 		if err != nil {
 			panic(fmt.Errorf("%s", err))
@@ -165,33 +194,64 @@ func (p *sprayCmd) spray() error {
 	}
 
 	// For debug...
-	/*
+    if p.debug {
 		for _, dependency := range dependencies {
-			fmt.Printf("dependencies: %s | %d\n", dependency.Name, dependency.Weight)
+			fmt.Printf("[spray] subchart: \"%s\" | targetable: %t | weight: %d\n", dependency.Name, dependency.Targetable, dependency.Weight)
 		}
-	*/
+    }
 
 	for i := 0; i <= getMaxWeight(dependencies); i++ {
+        shouldWait := false
+
+        // Upgrade the (targetable) Deployments, following the increasing weight
 		for _, dependency := range dependencies {
-			if dependency.Weight == i {
-				helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valuesFile, p.valuesSet, p.dryRun)
-				status := helm.GetHelmStatus(dependency.Name)
-				if status != "DEPLOYED" && !p.dryRun {
-					os.Exit(1)
-				}
-				fmt.Println("release: \"" + dependency.Name + "\" upgraded")
-			}
+            if dependency.Targetable {
+	    		if dependency.Weight == i {
+	    			fmt.Println("[spray] upgrading release: \"" + dependency.Name + "\"...")
+                    shouldWait = true
+
+                    // Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
+                    valuesSet := ""
+                    for _, dep := range dependencies {
+                        if dep.Name == dependency.Name {
+                            valuesSet = valuesSet + dep.Name + ".enabled=true,"
+                        } else {
+                            valuesSet = valuesSet + dep.Name + ".enabled=false,"
+                        }
+                    }
+                    valuesSet = valuesSet + p.valuesSet
+
+                    // Upgrade the Deployment
+	    			helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valueFiles, valuesSet, p.dryRun, p.debug)
+
+                    if !p.dryRun {
+        				status := helm.GetHelmStatus(dependency.Name)
+	    			    if status != "DEPLOYED" {
+		    	    		os.Exit(1)
+                        }
+		    		}
+
+	    			fmt.Println("[spray] release: \"" + dependency.Name + "\" upgraded")
+    			}
+            }
 		}
-		fmt.Println("waiting for Liveness and Readiness...")
-		for _, dependency := range dependencies {
-			if i > 0 && dependency.Weight == i && !p.dryRun {
-				for {
-					if kubectl.IsDeploymentUpToDate(dependency.Name, p.namespace) {
-						break
-					}
-					time.Sleep(5 * time.Second)
-				}
-			}
+
+        // Wait availability of the Deployment just upgraded
+        if shouldWait {
+    		fmt.Println("[spray] waiting for Liveness and Readiness...")
+
+            if !p.dryRun {
+    	    	for _, dependency := range dependencies {
+	    	    	if i > 0 && dependency.Weight == i {
+		    	    	for {
+			    		    if kubectl.IsDeploymentUpToDate(dependency.Name, p.namespace) {
+				        		break
+			    	    	}
+		    			    time.Sleep(5 * time.Second)
+	        			}
+        			}
+        }
+            }
 		}
 	}
 
