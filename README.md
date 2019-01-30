@@ -9,9 +9,9 @@
 This is a Helm plugin to install or upgrade sub-charts one by one from an umbrella chart.
 
 It works like `helm upgrade --install`, except that it upgrades or installs each sub-charts according to a weight (>=0) set on each sub-chart. All sub-charts of weight 0 are processed first, then sub-charts of weight 1, etc.
-Chart weight shall be specified using the '<chart name>.weight' value.
+Chart weight shall be specified using the `<chart name>.weight` value.
 
-Each sub-chart is deployed under a specific Release named '<chart name>', enabling a later individual upgrade targeting this sub-chart only. All global or individual upgrade should still be done on the umbrella chart.
+Each sub-chart is deployed under a specific Release named `<chart name or alias>`, enabling a later individual upgrade targeting this sub-chart only. All global or individual upgrade should still be done on the umbrella chart.
 
 
 ## Continuous Integration & Delivery
