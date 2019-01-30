@@ -34,6 +34,7 @@ type sprayCmd struct {
 	namespace    string
 	valueFiles   []string
 	valuesSet    string
+	force        bool
 	dryRun       bool
 	debug        bool
 }
@@ -124,6 +125,7 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
 	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If --target is not specified, all subcharts are targeted")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
+	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
 	f.BoolVar(&p.debug, "debug", false, "enable verbose output")
 	f.Parse(args)
@@ -222,7 +224,7 @@ func (p *sprayCmd) spray() error {
                     valuesSet = valuesSet + p.valuesSet
 
                     // Upgrade the Deployment
-	    			helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valueFiles, valuesSet, p.dryRun, p.debug)
+	    			helm.UpgradeWithValues(p.namespace, dependency.Name, dependency.Name, p.chartName, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
 
                     if !p.dryRun {
         				status := helm.GetHelmStatus(dependency.Name)
@@ -254,6 +256,8 @@ func (p *sprayCmd) spray() error {
             }
 		}
 	}
+
+    fmt.Println("[spray] upgrade completed.")
 
 	return nil
 }
