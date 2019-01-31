@@ -95,12 +95,25 @@ func Delete(chart string, dryRun bool) {
 }
 
 // UpgradeWithValues ...
-func UpgradeWithValues(namespace string, release string, chartName string, chartPath string, valueFiles []string, valuesSet string, dryRun bool, debug bool) {
+func UpgradeWithValues(namespace string, release string, chartName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, dryRun bool, debug bool) {
 	var myargs []string = []string{"upgrade", "--install", release, chartPath, "--namespace", namespace, "--set", valuesSet}
     for _, v := range valueFiles {
         myargs = append(myargs, "-f")
         myargs = append(myargs, v)
     }
+
+    if resetValues {
+        myargs = append(myargs, "--reset-values")
+    }
+
+    if reuseValues {
+        myargs = append(myargs, "--reuse-values")
+    }
+
+    if force {
+        myargs = append(myargs, "--force")
+    }
+
 	if dryRun {
         myargs = append(myargs, "--dry-run")
     }
