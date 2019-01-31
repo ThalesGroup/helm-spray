@@ -17,5 +17,4 @@ deploy:
   skip_cleanup: true
   file_glob: true
   on:
-    repo: cvila84/helm-spray
     tags: true
