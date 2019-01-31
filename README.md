@@ -1,10 +1,10 @@
-# helm Spray
+# Helm Spray
 
 [![Build Status](https://api.travis-ci.com/gemalto/helm-spray.svg?branch=master)](https://travis-ci.com/gemalto/helm-spray)
 
 ![helm-spray](https://gemalto.github.io/helm-spray/logo/helm-spray_150x150.png)
 
-## What is helm Spray?
+## What is Helm Spray?
 
 This is a Helm plugin to install or upgrade sub-charts one by one from an umbrella chart.
 
@@ -28,7 +28,7 @@ Helm Spray is building and delivering under Travis.
 ```
 
 Helm Spray shall always be called on the umbrella chart, whatever it is for upgrading the full set of charts, or for upgrading individual sub-charts (using the `--target` option).
-For a proper usage of helm Spray, the umbrella chart shall have a `requirement.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled`.
+For a proper usage of helm spray, the umbrella chart shall have a `requirement.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled`.
 Here is an example of `requirement.yaml` file for an umbrella chart having three sub-charts, one of them having an alias:
 ```
 dependencies:
@@ -62,7 +62,7 @@ ms3:
 Several sub-charts may have the same weight, meaning that they will be upgraded together.
 Upgrade of sub-charts of weight n+1 will only be triggered when upgrade of sub-charts of weight n is completed.
 
-Helm Spray creates one helm Release per sub-chart. Releases are individually upgraded when running the helm Spray process, in particular when using the `--target` option.
+Helm Spray creates one helm Release per sub-chart. Releases are individually upgraded when running the helm spray process, in particular when using the `--target` option.
 The name and version of the umbrella chart is set as the Chart name for all the Revisions.
 ```
 NAME            REVISION        UPDATED                         STATUS          CHART           APP VERSION     NAMESPACE
