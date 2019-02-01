@@ -1,5 +1,9 @@
 # Release Notes
 
+## Version 3.2.0 - 02/01/2019
+* Fix plugin.yaml executable name according to OS [#5](https://github.com/gemalto/helm-spray/pull/5)
+* Support of alias and of the '--force' option [#3](https://github.com/gemalto/helm-spray/pull/3)
+
 ## Version 3.1.0 - 01/27/2019
 * Adding support of several -f clauses
 * Adding debug option 
