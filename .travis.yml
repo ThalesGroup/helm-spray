@@ -1,14 +1,11 @@
-os: linux
-
 language: go
 
 go:
-  - 1.10.x
+- 1.10.x
 
 go_import_path: github.com/gemalto/helm-spray
 
-notifications:
-  email: true
+install:
 
 script:
 - make dist
@@ -20,5 +17,4 @@ deploy:
   skip_cleanup: true
   file_glob: true
   on:
-    repo: gemalto/helm-spray
     tags: true

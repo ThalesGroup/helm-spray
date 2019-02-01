@@ -1,28 +1,25 @@
-HELM_HOME ?= $(shell helm home)
-HELM_PLUGIN_DIR ?= $(HELM_HOME)/plugins/helm-spray
-VERSION := $(shell sed -n -e 's/version:[ "]*\([^"]*\).*/\1/p' plugin.yaml)
+VERSION := "3.2.0"
 DIST := $(CURDIR)/_dist
 LDFLAGS := "-X main.version=${VERSION}"
-BINARY := "helm-spray"
+TAR_LINUX := "helm-spray-linux-amd64.tar.gz"
+TAR_WINDOWS := "helm-spray-windows-amd64.tar.gz"
+BINARY_LINUX := "helm-spray"
+BINARY_WINDOWS := "helm-spray.exe"
 
 .PHONY: dist
-dist:
+
+dist: dist_linux dist_windows
+
+dist_linux:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=amd64 go get -t -v ./...
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY) -ldflags $(LDFLAGS) main.go
-	tar -zcvf $(DIST)/${BINARY}_linux_$(VERSION).tar.gz $(BINARY) README.md LICENSE plugin.yaml
-	GOOS=darwin GOARCH=amd64 go get -t -v ./...
-	GOOS=darwin GOARCH=amd64 go build -o $(BINARY) -ldflags $(LDFLAGS) main.go
-	tar -zcvf $(DIST)/${BINARY}_darwin_$(VERSION).tar.gz $(BINARY) README.md LICENSE plugin.yaml
+	GOOS=linux GOARCH=amd64 go build -o $(BINARY_LINUX) -ldflags $(LDFLAGS) main.go
+	sed -e "s/:VERSION:/$(VERSION)/g" -e "s/:BINARY:/$(BINARY_LINUX)/g" plugin.yaml.template > plugin.yaml
+	tar -czvf $(DIST)/$(TAR_LINUX) $(BINARY_LINUX) README.md LICENSE plugin.yaml
+
+.PHONY: dist_windows
+dist_windows:
 	GOOS=windows GOARCH=amd64 go get -t -v ./...
-	GOOS=windows GOARCH=amd64 go build -o $(BINARY).exe -ldflags $(LDFLAGS) main.go
-	tar -zcvf $(DIST)/${BINARY}_windows_$(VERSION).tar.gz $(BINARY).exe README.md LICENSE plugin.yaml
-
-.PHONY: lint
-lint:
-	@go get -u golang.org/x/lint/golint
-	go list ./... | xargs -n1 $${HOME}/go/bin/golint
-
-.PHONY: vet
-vet:
-	go vet ./...
+	GOOS=windows GOARCH=amd64 go build -o $(BINARY_WINDOWS) -ldflags $(LDFLAGS) main.go
+	sed -e "s/:VERSION:/$(VERSION)/g" -e "s/:BINARY:/$(BINARY_WINDOWS)/g" plugin.yaml.template > plugin.yaml
+	tar -czvf $(DIST)/${TAR_WINDOWS} $(BINARY_WINDOWS) README.md LICENSE plugin.yaml
