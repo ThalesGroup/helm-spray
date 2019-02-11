@@ -97,39 +97,39 @@ func Delete(chart string, dryRun bool) {
 // UpgradeWithValues ...
 func UpgradeWithValues(namespace string, release string, chartName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, dryRun bool, debug bool) {
 	var myargs []string = []string{"upgrade", "--install", release, chartPath, "--namespace", namespace, "--set", valuesSet}
-    for _, v := range valueFiles {
-        myargs = append(myargs, "-f")
-        myargs = append(myargs, v)
-    }
+	for _, v := range valueFiles {
+		myargs = append(myargs, "-f")
+		myargs = append(myargs, v)
+	}
 
-    if resetValues {
-        myargs = append(myargs, "--reset-values")
-    }
+	if resetValues {
+		myargs = append(myargs, "--reset-values")
+	}
 
-    if reuseValues {
-        myargs = append(myargs, "--reuse-values")
-    }
+	if reuseValues {
+		myargs = append(myargs, "--reuse-values")
+	}
 
-    if force {
-        myargs = append(myargs, "--force")
-    }
+	if force {
+		myargs = append(myargs, "--force")
+	}
 
 	if dryRun {
-        myargs = append(myargs, "--dry-run")
-    }
+		myargs = append(myargs, "--dry-run")
+	}
 
-    if debug {
-        myargs = append(myargs, "--debug")
-        fmt.Printf("[spray] running helm command for \"%s\": %v\n", release, myargs)
-    }
+	if debug {
+		myargs = append(myargs, "--debug")
+		fmt.Printf("[spray] running helm command for \"%s\": %v\n", release, myargs)
+	}
 
 	cmd := exec.Command("helm", myargs...)
-    if debug {
-	    cmd.Stdout = os.Stdout
-    } else {
-	    cmdOutput := &bytes.Buffer{}
-    	cmd.Stdout = cmdOutput
-    }
+	if debug {
+		cmd.Stdout = os.Stdout
+	} else {
+		cmdOutput := &bytes.Buffer{}
+		cmd.Stdout = cmdOutput
+	}
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
@@ -148,18 +148,18 @@ func Upgrade(namespace string, chart string, chartPath string, valuesSet string,
 		myargs = []string{"upgrade", "--install", "--namespace", namespace, "--set", chart + ".enabled=true," + valuesSet, chart, chartPath}
 	}
 
-    if debug {
-        myargs = append(myargs, "--debug")
-        fmt.Printf("[spray] running command: %v\n", myargs)
-    }
+	if debug {
+		myargs = append(myargs, "--debug")
+		fmt.Printf("[spray] running command: %v\n", myargs)
+	}
 
 	cmd := exec.Command("helm", myargs...)
-    if debug {
-        cmd.Stdout = os.Stdout
-    } else {
-	    cmdOutput := &bytes.Buffer{}
-    	cmd.Stdout = cmdOutput
-    }
+	if debug {
+		cmd.Stdout = os.Stdout
+	} else {
+		cmdOutput := &bytes.Buffer{}
+		cmd.Stdout = cmdOutput
+	}
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {

@@ -28,26 +28,26 @@ import (
 )
 
 type sprayCmd struct {
-	chartName    string
-	chartVersion string
-	targets      []string
-	namespace    string
-    resetValues  bool
-    reuseValues  bool
-	valueFiles   []string
-	valuesSet    string
-	force        bool
-	dryRun       bool
-	debug        bool
+	chartName		string
+	chartVersion	string
+	targets			[]string
+	namespace		string
+	resetValues		bool
+	reuseValues		bool
+	valueFiles		[]string
+	valuesSet		string
+	force			bool
+	dryRun			bool
+	debug			bool
 }
 
 // Dependency ...
 type Dependency struct {
-	Name        string
-	Alias       string
-	UsedName    string
-	Targeted    bool
-	Weight      int
+	Name		string
+	Alias		string
+	UsedName	string
+	Targeted	bool
+	Weight		int
 }
 
 var (
@@ -94,10 +94,10 @@ func newSprayCmd(args []string) *cobra.Command {
 	p := &sprayCmd{}
 
 	cmd := &cobra.Command{
-		Use:          "helm spray [CHART]",
-		Short:        `Helm plugin to upgrade subcharts from an umbrella chart`,
-		Long:         globalUsage,
-		SilenceUsage: true,
+		Use:			"helm spray [CHART]",
+		Short:			`Helm plugin to upgrade subcharts from an umbrella chart`,
+		Long:			globalUsage,
+		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 
 			if len(args) != 1 {
@@ -136,12 +136,12 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.BoolVar(&p.debug, "debug", false, "enable verbose output")
 	f.Parse(args)
 
-    // When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
-    if !p.debug {
-        if "1" == os.Getenv("HELM_DEBUG") {
-            p.debug = true
-        }
-    }
+	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
+	if !p.debug {
+		if "1" == os.Getenv("HELM_DEBUG") {
+			p.debug = true
+		}
+	}
 
 	return cmd
 
@@ -170,30 +170,30 @@ func (p *sprayCmd) spray() error {
 	dependencies := make([]Dependency, len(reqs.Dependencies))
 
 	for i, req := range reqs.Dependencies {
-        // Dependency name and alias
+		// Dependency name and alias
 		dependencies[i].Name = req.Name
 		dependencies[i].Alias = req.Alias
-        if req.Alias == "" {
-		    dependencies[i].UsedName = dependencies[i].Name
-        } else {
-		    dependencies[i].UsedName = dependencies[i].Alias
-        }
+		if req.Alias == "" {
+			dependencies[i].UsedName = dependencies[i].Name
+		} else {
+			dependencies[i].UsedName = dependencies[i].Alias
+		}
 
-        // Is dependency targeted? If --target is specificed, it should match the name of the current dependency; 
-        // if no --target is specified, then all dependencies are targeted
-        if len(p.targets) > 0 {
-            dependencies[i].Targeted = false
-            for j := range p.targets {
-                if p.targets[j] == dependencies[i].UsedName {
-                    dependencies[i].Targeted = true
-                }
-            }
-        } else {
-            dependencies[i].Targeted = true
-        }
+		// Is dependency targeted? If --target is specificed, it should match the name of the current dependency; 
+		// if no --target is specified, then all dependencies are targeted
+		if len(p.targets) > 0 {
+			dependencies[i].Targeted = false
+			for j := range p.targets {
+				if p.targets[j] == dependencies[i].UsedName {
+					dependencies[i].Targeted = true
+				}
+			}
+		} else {
+			dependencies[i].Targeted = true
+		}
 
-        // Get weight of the dependency. If no weight is specified, setting it to 0
-        dependencies[i].Weight = 0
+		// Get weight of the dependency. If no weight is specified, setting it to 0
+		dependencies[i].Weight = 0
 		depi, err := values.Table(dependencies[i].UsedName)
 		if (err == nil && depi["weight"] != nil) {
 			w64 := depi["weight"].(float64)
@@ -206,72 +206,72 @@ func (p *sprayCmd) spray() error {
 	}
 
 	// For debug...
-    if p.debug {
+	if p.debug {
 		for _, dependency := range dependencies {
-            if dependency.Alias == "" {
-    			fmt.Printf("[spray] subchart: \"%s\" | targeted: %t | weight: %d\n", dependency.Name, dependency.Targeted, dependency.Weight)
-            } else {
-    			fmt.Printf("[spray] subchart: \"%s\" (is alias of: \"%s\") | targeted: %t | weight: %d\n", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight)
-            }
-		}
-    }
-
-	for i := 0; i <= getMaxWeight(dependencies); i++ {
-        shouldWait := false
-
-        // Upgrade the current (targeted) Deployments, following the increasing weight
-		for _, dependency := range dependencies {
-            if dependency.Targeted {
-	    		if dependency.Weight == i {
-	    			fmt.Println("[spray] upgrading release: \"" + dependency.UsedName + "\"...")
-                    shouldWait = true
-
-                    // Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
-                    valuesSet := ""
-                    for _, dep := range dependencies {
-                        if dep.UsedName == dependency.UsedName {
-                            valuesSet = valuesSet + dep.UsedName + ".enabled=true,"
-                        } else {
-                            valuesSet = valuesSet + dep.UsedName + ".enabled=false,"
-                        }
-                    }
-                    valuesSet = valuesSet + p.valuesSet
-
-                    // Upgrade the Deployment
-	    			helm.UpgradeWithValues(p.namespace, dependency.UsedName, dependency.UsedName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
-
-                    if !p.dryRun {
-        				status := helm.GetHelmStatus(dependency.UsedName)
-	    			    if status != "DEPLOYED" {
-		    	    		os.Exit(1)
-                        }
-		    		}
-
-	    			fmt.Println("[spray] release: \"" + dependency.UsedName + "\" upgraded")
-    			}
-            }
-		}
-
-        // Wait availability of the Deployment just upgraded
-        if shouldWait {
-    		fmt.Println("[spray] waiting for Liveness and Readiness...")
-
-            if !p.dryRun {
-    	    	for _, dependency := range dependencies {
-	    	    	if i > 0 && dependency.Weight == i {
-		    	    	for {
-			    		    if kubectl.IsDeploymentUpToDate(dependency.UsedName, p.namespace) {
-				        		break
-			    	    	}
-		    			    time.Sleep(5 * time.Second)
-	        			}
-        			}
-        }
-            }
+			if dependency.Alias == "" {
+				fmt.Printf("[spray] subchart: \"%s\" | targeted: %t | weight: %d\n", dependency.Name, dependency.Targeted, dependency.Weight)
+			} else {
+				fmt.Printf("[spray] subchart: \"%s\" (is alias of: \"%s\") | targeted: %t | weight: %d\n", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight)
+			}
 		}
 	}
 
-    fmt.Println("[spray] upgrade completed.")
+	for i := 0; i <= getMaxWeight(dependencies); i++ {
+		shouldWait := false
+
+		// Upgrade the current (targeted) Deployments, following the increasing weight
+		for _, dependency := range dependencies {
+			if dependency.Targeted {
+				if dependency.Weight == i {
+					fmt.Println("[spray] upgrading release: \"" + dependency.UsedName + "\"...")
+					shouldWait = true
+
+					// Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
+					valuesSet := ""
+					for _, dep := range dependencies {
+						if dep.UsedName == dependency.UsedName {
+							valuesSet = valuesSet + dep.UsedName + ".enabled=true,"
+						} else {
+							valuesSet = valuesSet + dep.UsedName + ".enabled=false,"
+						}
+					}
+					valuesSet = valuesSet + p.valuesSet
+
+					// Upgrade the Deployment
+					helm.UpgradeWithValues(p.namespace, dependency.UsedName, dependency.UsedName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
+
+					if !p.dryRun {
+						status := helm.GetHelmStatus(dependency.UsedName)
+						if status != "DEPLOYED" {
+							os.Exit(1)
+						}
+					}
+
+					fmt.Println("[spray] release: \"" + dependency.UsedName + "\" upgraded")
+				}
+			}
+		}
+
+		// Wait availability of the Deployment just upgraded
+		if shouldWait {
+			fmt.Println("[spray] waiting for Liveness and Readiness...")
+
+			if !p.dryRun {
+				for _, dependency := range dependencies {
+					if dependency.Weight == i && dependency.Targeted == true {
+						for {
+							if kubectl.IsDeploymentUpToDate(dependency.UsedName, p.namespace) {
+								break
+							}
+							time.Sleep(5 * time.Second)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	fmt.Println("[spray] upgrade completed.")
 
 	return nil
 }

@@ -14,7 +14,6 @@ package kubectl
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 )
@@ -90,7 +89,8 @@ func IsStatefulSetUpToDate(deployment string, namespace string) bool {
 func getDesired(k8stype string, namespace string, deployment string) string {
 	desired, err := exec.Command("kubectl", "--namespace", namespace, "get", k8stype, deployment, "-o=jsonpath='{.spec.replicas}'").Output()
 	if err != nil {
-		log.Fatal(err)
+		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "0" in any case.
+		return "0"
 	}
 	return string(desired)
 }
@@ -98,7 +98,8 @@ func getDesired(k8stype string, namespace string, deployment string) string {
 func getReady(k8stype string, namespace string, deployment string) string {
 	ready, err := exec.Command("kubectl", "--namespace", namespace, "get", k8stype, deployment, "-o=jsonpath='{.status.readyReplicas}'").Output()
 	if err != nil {
-		log.Fatal(err)
+		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "0" in any case.
+		return "0"
 	}
 	return string(ready)
 }
@@ -106,7 +107,8 @@ func getReady(k8stype string, namespace string, deployment string) string {
 func getUpdated(k8stype string, namespace string, deployment string) string {
 	updated, err := exec.Command("kubectl", "--namespace", namespace, "get", k8stype, deployment, "-o=jsonpath='{.status.updatedReplicas}'").Output()
 	if err != nil {
-		log.Fatal(err)
+		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "0" in any case.
+		return "0"
 	}
 	return string(updated)
 }
