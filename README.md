@@ -76,18 +76,24 @@ Note: if an alias is set for a sub-chart, then this is this alias that should be
 ### Flags:
 
 ```
-      --debug              enable helm debug output (also include spray verbose output)
-      --dry-run            simulate a spray
-      --force              force resource update through delete/recreate if needed
-  -h, --help               help for helm
-  -n, --namespace string   namespace to spray the chart into. (default "default")
-      --reset-values       when upgrading, reset the values to the ones built into the chart
-      --reuse-values       when upgrading, reuse the last release's values and merge in any overrides from the command line via --set and -f. If '--reset-values' is specified, this is ignored.
-      --set string         set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
-  -t, --target strings     specify the subchart to target (can specify multiple). If --target is not specified, all subcharts are targeted
-  -f, --values strings     specify values in a YAML file or a URL (can specify multiple)
-      --verbose            enable spray verbose output
-      --version string     specify the exact chart version to install. If this is not specified, the latest version is installed
+      --debug                            enable helm debug output (also include spray verbose output)
+      --dry-run                          simulate a spray
+      --force                            force resource update through delete/recreate if needed
+  -h, --help                             help for helm
+  -n, --namespace string                 namespace to spray the chart into. (default "default")
+      --prefix-releases string           prefix the releases by the given string, resulting into releases names formats:
+                                             "<prefix>-<chart name or alias>"
+                                         Allowed characters are a-z A-Z 0-9 and -
+      --prefix-releases-with-namespace   prefix the releases by the name of the namespace, resulting into releases names formats:
+                                             "<namespace>-<chart name or alias>"
+      --reset-values                     when upgrading, reset the values to the ones built into the chart
+      --reuse-values                     when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.
+                                         If '--reset-values' is specified, this is ignored.
+      --set string                       set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
+  -t, --target strings                   specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted
+  -f, --values strings                   specify values in a YAML file or a URL (can specify multiple)
+      --verbose                          enable spray verbose output
+      --version string                   specify the exact chart version to install. If this is not specified, the latest version is installed
 ```
 
 ## Install

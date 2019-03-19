@@ -237,35 +237,31 @@ func Delete(chart string, dryRun bool) {
 }
 
 // UpgradeWithValues ...
-func UpgradeWithValues(namespace string, release string, chartName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, dryRun bool, debug bool) HelmStatus {
-	var myargs []string = []string{"upgrade", "--install", release, chartPath, "--namespace", namespace, "--set", valuesSet}
+func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, dryRun bool, debug bool) HelmStatus {
+	// Prepare parameters...
+	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--set", valuesSet}
 	for _, v := range valueFiles {
 		myargs = append(myargs, "-f")
 		myargs = append(myargs, v)
 	}
-
 	if resetValues {
 		myargs = append(myargs, "--reset-values")
 	}
-
 	if reuseValues {
 		myargs = append(myargs, "--reuse-values")
 	}
-
 	if force {
 		myargs = append(myargs, "--force")
 	}
-
 	if dryRun {
 		myargs = append(myargs, "--dry-run")
 	}
-
 	if debug {
 		myargs = append(myargs, "--debug")
-		fmt.Printf("[spray] running helm command for \"%s\": %v\n", release, myargs)
+		fmt.Printf("[spray] running helm command for \"%s\": %v\n", releaseName, myargs)
 	}
 
-
+	// Run the upgrade command
 	cmd := exec.Command("helm", myargs...)
 
 	cmdOutput := &bytes.Buffer{}
@@ -277,13 +273,12 @@ func UpgradeWithValues(namespace string, release string, chartName string, chart
 	if debug {
 		fmt.Printf(string(output))
 	}
-
 	if err != nil {
 		printError(err)
 		os.Exit(1)
 	}
 
-	// but in both cases, stdout is required to get and parse the ending helm status.
+	// Parse the ending helm status.
 	helmstatus := HelmStatus{}
 	parseStatusOutput(output, &helmstatus)
 	return helmstatus
