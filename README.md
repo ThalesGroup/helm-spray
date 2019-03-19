@@ -76,7 +76,7 @@ Note: if an alias is set for a sub-chart, then this is this alias that should be
 ### Flags:
 
 ```
-      --debug              enable verbose output
+      --debug              enable helm debug output (also include spray verbose output)
       --dry-run            simulate a spray
       --force              force resource update through delete/recreate if needed
   -h, --help               help for helm
@@ -86,6 +86,7 @@ Note: if an alias is set for a sub-chart, then this is this alias that should be
       --set string         set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
   -t, --target strings     specify the subchart to target (can specify multiple). If --target is not specified, all subcharts are targeted
   -f, --values strings     specify values in a YAML file or a URL (can specify multiple)
+      --verbose            enable spray verbose output
       --version string     specify the exact chart version to install. If this is not specified, the latest version is installed
 ```
 
