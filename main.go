@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
 	"github.com/gemalto/helm-spray/pkg/kubectl"
@@ -245,6 +246,10 @@ func (p *sprayCmd) spray() error {
 	helmReleases := helm.List(p.namespace)
 
 	if p.verbose {
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
+		fmt.Fprintln(w, "[spray]  \tsubchart\tis alias of\ttargeted\tweight\t|corresponding release\trevision\tstatus\t")
+		fmt.Fprintln(w, "[spray]  \t--------\t-----------\t--------\t------\t|---------------------\t--------\t------\t")
+
 		for _, dependency := range dependencies {
 			currentRevision := "None"
 			currentStatus := "Not deployed"
@@ -254,14 +259,13 @@ func (p *sprayCmd) spray() error {
 			}
 
 			if dependency.Alias == "" {
-				log(2, "subchart \"%s\" - targeted: %t - weight: %d", dependency.Name, dependency.Targeted, dependency.Weight)
-				log(3, "corresponding release: \"%s\" - current revision: %s - current status: %s", dependency.CorrespondingReleaseName, currentRevision, currentStatus)
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 
 			} else {
-				log(2, "subchart \"%s\" (is alias of \"%s\") - targeted: %t - weight: %d", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight)
-				log(3, "corresponding release: \"%s\" - current revision: %s - current status: %s", dependency.CorrespondingReleaseName, currentRevision, currentStatus)
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 			}
 		}
+w.Flush()
 	}
 
 	// Loop on the increasing weight
