@@ -254,10 +254,12 @@ func (p *sprayCmd) spray() error {
 			}
 
 			if dependency.Alias == "" {
-				log(2, "subchart \"%s\" - targeted: %t - weight: %d | corresponding release: \"%s\" - current revision: %s - current status: %s", dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus)
+				log(2, "subchart \"%s\" - targeted: %t - weight: %d", dependency.Name, dependency.Targeted, dependency.Weight)
+				log(3, "corresponding release: \"%s\" - current revision: %s - current status: %s", dependency.CorrespondingReleaseName, currentRevision, currentStatus)
 
 			} else {
-				log(2, "subchart \"%s\" (is alias of \"%s\") - targeted: %t - weight: %d | corresponding release: \"%s\" - current revision: %s - current status: %s", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus)
+				log(2, "subchart \"%s\" (is alias of \"%s\") - targeted: %t - weight: %d", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight)
+				log(3, "corresponding release: \"%s\" - current revision: %s - current status: %s", dependency.CorrespondingReleaseName, currentRevision, currentStatus)
 			}
 		}
 	}
