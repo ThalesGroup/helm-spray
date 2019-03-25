@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 3.3.0 - 03/25/2019
+* Enhance "wait liveness and readiness" and create capability to prefix releases names [#16](https://github.com/gemalto/helm-spray/pull/16)
+
 ## Version 3.2.1 - 02/14/2019
 * Bugfixes on "waiting for Liveness and Readiness" step [#14](https://github.com/gemalto/helm-spray/pull/14)
 
