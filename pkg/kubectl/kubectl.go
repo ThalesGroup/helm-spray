@@ -59,15 +59,27 @@ func GetDeployment(namespace string) {
 	}
 }
 
+// GetJob ...
+func GetJob(namespace string) {
+	cmd := exec.Command("kubectl", "get", "jobs", "--namespace", namespace)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+
 // IsDeploymentUpToDate ...
 func IsDeploymentUpToDate(deployment string, namespace string) bool {
-	desired := getDesired("deployment", namespace, deployment)
-	updated := getUpdated("deployment", namespace, deployment)
-	ready := getReady("deployment", namespace, deployment)
+	desired := getDesired("deployment", deployment, namespace)
+	current := getCurrent("deployment", deployment, namespace)
+	updated := getUpdated("deployment", deployment, namespace)
+	ready := getReady("deployment", deployment, namespace)
 	if desired != ready {
 		return false
 	} else {
-		if desired == updated {
+		if (desired == updated) && (desired == current) {
 			return true
 		} else {
 			return false
@@ -77,8 +89,8 @@ func IsDeploymentUpToDate(deployment string, namespace string) bool {
 
 // IsStatefulSetUpToDate ...
 func IsStatefulSetUpToDate(deployment string, namespace string) bool {
-	desired := getDesired("statefulset", namespace, deployment)
-	ready := getReady("statefulset", namespace, deployment)
+	desired := getDesired("statefulset", deployment, namespace)
+	ready := getReady("statefulset", deployment, namespace)
 	if desired == ready {
 		return true
 	} else {
@@ -86,29 +98,44 @@ func IsStatefulSetUpToDate(deployment string, namespace string) bool {
 	}
 }
 
-func getDesired(k8stype string, namespace string, deployment string) string {
-	desired, err := exec.Command("kubectl", "--namespace", namespace, "get", k8stype, deployment, "-o=jsonpath='{.spec.replicas}'").Output()
-	if err != nil {
-		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "0" in any case.
-		return "0"
+// IsJobCompleted ...
+func IsJobCompleted(job string, namespace string) bool {
+	succeeded := getSucceeded("job", job, namespace)
+	if succeeded == "'1'" {
+		return true
+	} else {
+		return false
 	}
-	return string(desired)
 }
 
-func getReady(k8stype string, namespace string, deployment string) string {
-	ready, err := exec.Command("kubectl", "--namespace", namespace, "get", k8stype, deployment, "-o=jsonpath='{.status.readyReplicas}'").Output()
+
+// Utility functions to get informations extracted from a 'kubectl get' command result
+func getObjectDescriptionItem(k8sObjectType string, objectName string, namespace string, itemJsonPath string) string {
+	item, err := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, objectName, "-o=jsonpath='{" + itemJsonPath + "}'").Output()
 	if err != nil {
-		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "0" in any case.
-		return "0"
+		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "" in any case.
+		return ""
 	}
-	return string(ready)
+	return string(item)
 }
 
-func getUpdated(k8stype string, namespace string, deployment string) string {
-	updated, err := exec.Command("kubectl", "--namespace", namespace, "get", k8stype, deployment, "-o=jsonpath='{.status.updatedReplicas}'").Output()
-	if err != nil {
-		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "0" in any case.
-		return "0"
-	}
-	return string(updated)
+func getDesired(k8sObjectType string, objectName string, namespace string) string {
+	return getObjectDescriptionItem(k8sObjectType, objectName, namespace, ".spec.replicas")
 }
+
+func getCurrent(k8sObjectType string, objectName string, namespace string) string {
+	return getObjectDescriptionItem(k8sObjectType, objectName, namespace, ".status.replicas")
+}
+
+func getReady(k8sObjectType string, objectName string, namespace string) string {
+	return getObjectDescriptionItem(k8sObjectType, objectName, namespace, ".status.readyReplicas")
+}
+
+func getUpdated(k8sObjectType string, objectName string, namespace string) string {
+	return getObjectDescriptionItem(k8sObjectType, objectName, namespace, ".status.updatedReplicas")
+}
+
+func getSucceeded(k8sObjectType string, objectName string, namespace string) string {
+	return getObjectDescriptionItem(k8sObjectType, objectName, namespace, ".status.succeeded")
+}
+

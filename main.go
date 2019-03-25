@@ -16,9 +16,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"bufio"
 	"strconv"
 	"strings"
 	"time"
+	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
 	"github.com/gemalto/helm-spray/pkg/kubectl"
@@ -28,26 +30,30 @@ import (
 )
 
 type sprayCmd struct {
-	chartName		string
-	chartVersion	string
-	targets			[]string
-	namespace		string
-	resetValues		bool
-	reuseValues		bool
-	valueFiles		[]string
-	valuesSet		string
-	force			bool
-	dryRun			bool
-	debug			bool
+	chartName						string
+	chartVersion					string
+	targets							[]string
+	namespace						string
+	prefixReleases					string
+	prefixReleasesWithNamespace		bool
+	resetValues						bool
+	reuseValues						bool
+	valueFiles						[]string
+	valuesSet						string
+	force							bool
+	dryRun							bool
+	verbose							bool
+	debug							bool
 }
 
 // Dependency ...
 type Dependency struct {
-	Name		string
-	Alias		string
-	UsedName	string
-	Targeted	bool
-	Weight		int
+	Name						string
+	Alias						string
+	UsedName					string
+	Targeted					bool
+	Weight						int
+	CorrespondingReleaseName	string
 }
 
 var (
@@ -116,7 +122,14 @@ func newSprayCmd(args []string) *cobra.Command {
 					fmt.Println("You cannot use --version together with chart directory")
 					os.Exit(1)
 				}
+
+				log(1, "fetching chart \"%s\" version %s...", p.chartName, p.chartVersion)
 				helm.Fetch(p.chartName, p.chartVersion)
+			}
+
+			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
+				fmt.Println("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
+				os.Exit(1)
 			}
 
 			return p.spray()
@@ -125,15 +138,18 @@ func newSprayCmd(args []string) *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringSliceVarP(&p.valueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
-	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into.")
+	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
-	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If --target is not specified, all subcharts are targeted")
+	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted")
+	f.StringVarP(&p.prefixReleases, "prefix-releases", "", "", "prefix the releases by the given string, resulting into releases names formats:\n    \"<prefix>-<chart name or alias>\"\nAllowed characters are a-z A-Z 0-9 and -")
+	f.BoolVar(&p.prefixReleasesWithNamespace, "prefix-releases-with-namespace", false, "prefix the releases by the name of the namespace, resulting into releases names formats:\n    \"<namespace>-<chart name or alias>\"")
 	f.BoolVar(&p.resetValues, "reset-values", false, "when upgrading, reset the values to the ones built into the chart")
-	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via --set and -f. If '--reset-values' is specified, this is ignored.")
+	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.\nIf '--reset-values' is specified, this is ignored")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
-	f.BoolVar(&p.debug, "debug", false, "enable verbose output")
+	f.BoolVar(&p.verbose, "verbose", false, "enable spray verbose output")
+	f.BoolVar(&p.debug, "debug", false, "enable helm debug output (also include spray verbose output)")
 	f.Parse(args)
 
 	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
@@ -141,6 +157,9 @@ func newSprayCmd(args []string) *cobra.Command {
 		if "1" == os.Getenv("HELM_DEBUG") {
 			p.debug = true
 		}
+	}
+	if p.debug {
+		p.verbose = true
 	}
 
 	return cmd
@@ -167,8 +186,8 @@ func (p *sprayCmd) spray() error {
 		panic(fmt.Errorf("%s", err))
 	}
 
+	// Build the list of all rependencies, and their key attributes
 	dependencies := make([]Dependency, len(reqs.Dependencies))
-
 	for i, req := range reqs.Dependencies {
 		// Dependency name and alias
 		dependencies[i].Name = req.Name
@@ -203,27 +222,74 @@ func (p *sprayCmd) spray() error {
 			}
 			dependencies[i].Weight = w
 		}
-	}
 
-	// For debug...
-	if p.debug {
-		for _, dependency := range dependencies {
-			if dependency.Alias == "" {
-				fmt.Printf("[spray] subchart: \"%s\" | targeted: %t | weight: %d\n", dependency.Name, dependency.Targeted, dependency.Weight)
-			} else {
-				fmt.Printf("[spray] subchart: \"%s\" (is alias of: \"%s\") | targeted: %t | weight: %d\n", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight)
-			}
+		// Compute the corresponding release name
+		if p.prefixReleasesWithNamespace == true {
+			dependencies[i].CorrespondingReleaseName = p.namespace + "-" + dependencies[i].UsedName
+		} else if p.prefixReleases != "" {
+			dependencies[i].CorrespondingReleaseName = p.prefixReleases + "-" + dependencies[i].UsedName
+		} else {
+			dependencies[i].CorrespondingReleaseName = dependencies[i].UsedName
 		}
 	}
 
+
+	// Starting the processing...
+	if p.prefixReleasesWithNamespace == true {
+		log(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases prefix \"%s-\"", p.chartName, p.namespace, p.namespace)
+	} else if p.prefixReleases != "" {
+		log(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases prefix \"%s-\"", p.chartName, p.namespace, p.prefixReleases)
+	} else {
+		log(1, "deploying solution chart \"%s\" in namespace \"%s\"", p.chartName, p.namespace)
+	}
+
+	helmReleases := helm.List(p.namespace)
+
+	if p.verbose {
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
+		fmt.Fprintln(w, "[spray]  \tsubchart\tis alias of\ttargeted\tweight\t|corresponding release\trevision\tstatus\t")
+		fmt.Fprintln(w, "[spray]  \t--------\t-----------\t--------\t------\t|---------------------\t--------\t------\t")
+
+		for _, dependency := range dependencies {
+			currentRevision := "None"
+			currentStatus := "Not deployed"
+			if release, ok := helmReleases[dependency.CorrespondingReleaseName]; ok {
+				currentRevision = strconv.Itoa(release.Revision)
+				currentStatus = release.Status
+			}
+
+			if dependency.Alias == "" {
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+
+			} else {
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+			}
+		}
+w.Flush()
+	}
+
+	// Loop on the increasing weight
 	for i := 0; i <= getMaxWeight(dependencies); i++ {
 		shouldWait := false
+		firstInWeight := true
+		helmstatusses := make([]helm.HelmStatus, 0)
 
-		// Upgrade the current (targeted) Deployments, following the increasing weight
+		// Upgrade the targeted Deployments corresponding the the current weight
 		for _, dependency := range dependencies {
 			if dependency.Targeted {
 				if dependency.Weight == i {
-					fmt.Println("[spray] upgrading release: \"" + dependency.UsedName + "\"...")
+					if firstInWeight {
+						log(1, "processing sub-charts of weight %d", dependency.Weight)
+						firstInWeight = false
+					}
+
+					if release, ok := helmReleases[dependency.CorrespondingReleaseName]; ok {
+						log(2, "upgrading release \"%s\": going from revision %d (status %s) to %d...", dependency.CorrespondingReleaseName, release.Revision, release.Status, release.Revision+1)
+
+					} else {
+						log(2, "upgrading release \"%s\": deploying first revision...", dependency.CorrespondingReleaseName)
+					}
+
 					shouldWait = true
 
 					// Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
@@ -238,29 +304,73 @@ func (p *sprayCmd) spray() error {
 					valuesSet = valuesSet + p.valuesSet
 
 					// Upgrade the Deployment
-					helm.UpgradeWithValues(p.namespace, dependency.UsedName, dependency.UsedName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
+					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
+					helmstatusses = append(helmstatusses, helmstatus)
 
-					if !p.dryRun {
-						status := helm.GetHelmStatus(dependency.UsedName)
-						if status != "DEPLOYED" {
-							os.Exit(1)
+					log(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
+					if p.verbose {
+						log(3, "helm status: %s", helmstatus.Status)
+					}
+
+					if p.verbose {
+						log(3, "helm resources:")
+						var scanner = bufio.NewScanner(strings.NewReader(helmstatus.Resources))
+						for scanner.Scan() {
+							if len (scanner.Text()) > 0 {
+								log(4, scanner.Text())
+							}
 						}
 					}
 
-					fmt.Println("[spray] release: \"" + dependency.UsedName + "\" upgraded")
+					if helmstatus.Status == "" {
+						log(2, "Warning: no status returned by helm.")
+					} else if helmstatus.Status != "DEPLOYED" {
+						log(2, "Error: status returned by helm differs from \"DEPLOYED\". Cannot continue spray processing.")
+						os.Exit(1)
+					}
 				}
 			}
 		}
 
-		// Wait availability of the Deployment just upgraded
+		// Wait availability of the just upgraded Releases
 		if shouldWait {
-			fmt.Println("[spray] waiting for Liveness and Readiness...")
+			log(2, "waiting for Liveness and Readiness...")
 
 			if !p.dryRun {
-				for _, dependency := range dependencies {
-					if dependency.Weight == i && dependency.Targeted == true {
+				for _, status := range helmstatusses {
+					// Wait for completion of the Deployments update
+					for _, dep := range status.Deployments {
 						for {
-							if kubectl.IsDeploymentUpToDate(dependency.UsedName, p.namespace) {
+							if p.verbose {
+								log(3, "waiting for Deployment \"%s\"", dep)
+							}
+							if kubectl.IsDeploymentUpToDate(dep, p.namespace) {
+								break
+							}
+							time.Sleep(5 * time.Second)
+						}
+					}
+
+					// Wait for completion of the StatefulSets update
+					for _, ss := range status.StatefulSets {
+						for {
+							if p.verbose {
+								log(3, "waiting for StatefulSet \"%s\"", ss)
+							}
+							if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
+								break
+							}
+							time.Sleep(5 * time.Second)
+						}
+					}
+
+					// Wait for completion of the Jobs
+					for _, job := range status.Jobs {
+						for {
+							if p.verbose {
+								log(3, "waiting for Job \"%s\"", job)
+							}
+							if kubectl.IsJobCompleted(job, p.namespace) {
 								break
 							}
 							time.Sleep(5 * time.Second)
@@ -271,7 +381,7 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
-	fmt.Println("[spray] upgrade completed.")
+	log(1, "upgrade of solution chart \"%s\" completed", p.chartName)
 
 	return nil
 }
@@ -287,6 +397,23 @@ func getMaxWeight(v []Dependency) (m int) {
 		}
 	}
 	return m
+}
+
+// Log spray messages
+func log(level int, str string, params ...interface{}) {
+	var logStr = "[spray] "
+
+	if level == 2 {
+		logStr = logStr + "  > "
+	} else if level == 3 {
+		logStr = logStr + "    o "
+	} else if level == 4 {
+		logStr = logStr + "      - "
+	} else if level >= 5 {
+		logStr = logStr + "        . "
+	}
+
+	fmt.Println(logStr + fmt.Sprintf(str, params...))
 }
 
 func main() {
