@@ -41,6 +41,7 @@ type sprayCmd struct {
 	valueFiles						[]string
 	valuesSet						string
 	force							bool
+	timeout		 					int
 	dryRun							bool
 	verbose							bool
 	debug							bool
@@ -115,11 +116,11 @@ func newSprayCmd(args []string) *cobra.Command {
 
 			if p.chartVersion != "" {
 				if strings.Contains(p.chartName, "tgz") {
-					fmt.Println("You cannot use --version together with chart archive")
+					os.Stderr.WriteString("You cannot use --version together with chart archive\n")
 					os.Exit(1)
 				}
 				if _, err := os.Stat(p.chartName); err == nil {
-					fmt.Println("You cannot use --version together with chart directory")
+					os.Stderr.WriteString("You cannot use --version together with chart directory\n")
 					os.Exit(1)
 				}
 
@@ -128,6 +129,7 @@ func newSprayCmd(args []string) *cobra.Command {
 			}
 
 			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
+				os.Stderr.WriteString("You cannot use both --prefix-releases and --prefix-releases-with-namespace together\n")
 				fmt.Println("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 				os.Exit(1)
 			}
@@ -147,6 +149,7 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.\nIf '--reset-values' is specified, this is ignored")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
+	f.IntVar(&p.timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)\nand for liveness and readiness (like Deployments and regular Jobs completion)")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
 	f.BoolVar(&p.verbose, "verbose", false, "enable spray verbose output")
 	f.BoolVar(&p.debug, "debug", false, "enable helm debug output (also include spray verbose output)")
@@ -247,8 +250,8 @@ func (p *sprayCmd) spray() error {
 
 	if p.verbose {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-		fmt.Fprintln(w, "[spray]  \tsubchart\tis alias of\ttargeted\tweight\t|corresponding release\trevision\tstatus\t")
-		fmt.Fprintln(w, "[spray]  \t--------\t-----------\t--------\t------\t|---------------------\t--------\t------\t")
+		fmt.Fprintln(w, "[spray]  \t subchart\t is alias of\t targeted\t weight\t| corresponding release\t revision\t status\t")
+		fmt.Fprintln(w, "[spray]  \t --------\t -----------\t --------\t ------\t| ---------------------\t --------\t ------\t")
 
 		for _, dependency := range dependencies {
 			currentRevision := "None"
@@ -259,10 +262,10 @@ func (p *sprayCmd) spray() error {
 			}
 
 			if dependency.Alias == "" {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 
 			} else {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 			}
 		}
 w.Flush()
@@ -304,7 +307,7 @@ w.Flush()
 					valuesSet = valuesSet + p.valuesSet
 
 					// Upgrade the Deployment
-					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
+					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.timeout, p.dryRun, p.debug)
 					helmstatusses = append(helmstatusses, helmstatus)
 
 					log(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
@@ -338,42 +341,72 @@ w.Flush()
 
 			if !p.dryRun {
 				for _, status := range helmstatusses {
+					sleep_time := 5
+
 					// Wait for completion of the Deployments update
 					for _, dep := range status.Deployments {
-						for {
+						done := false
+
+						for i := 0; i < p.timeout; {
 							if p.verbose {
 								log(3, "waiting for Deployment \"%s\"", dep)
 							}
 							if kubectl.IsDeploymentUpToDate(dep, p.namespace) {
+								done = true
 								break
 							}
-							time.Sleep(5 * time.Second)
+							time.Sleep(time.Duration(sleep_time) * time.Second)
+							i = i + sleep_time
+						}
+
+						if !done {
+							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
+							os.Stderr.WriteString("==> Error: exit status 1\n")
+							os.Exit(1)
 						}
 					}
 
 					// Wait for completion of the StatefulSets update
 					for _, ss := range status.StatefulSets {
-						for {
+						done := false
+
+						for i := 0; i < p.timeout; {
 							if p.verbose {
 								log(3, "waiting for StatefulSet \"%s\"", ss)
 							}
 							if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
+								done = true
 								break
 							}
-							time.Sleep(5 * time.Second)
+							time.Sleep(time.Duration(sleep_time) * time.Second)
+							i = i + sleep_time
+						}
+
+						if !done {
+							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
+							os.Stderr.WriteString("==> Error: exit status 1\n")
 						}
 					}
 
 					// Wait for completion of the Jobs
 					for _, job := range status.Jobs {
-						for {
+						done := false
+
+						for i := 0; i < p.timeout; {
 							if p.verbose {
 								log(3, "waiting for Job \"%s\"", job)
 							}
 							if kubectl.IsJobCompleted(job, p.namespace) {
+								done = true
 								break
 							}
-							time.Sleep(5 * time.Second)
+							time.Sleep(time.Duration(sleep_time) * time.Second)
+							i = i + sleep_time
+						}
+
+						if !done {
+							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
+							os.Stderr.WriteString("==> Error: exit status 1\n")
 						}
 					}
 				}

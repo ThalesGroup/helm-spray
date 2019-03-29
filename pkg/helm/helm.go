@@ -15,6 +15,7 @@ package helm
 import (
 	"bytes"
 	"strings"
+    "strconv"
 	"bufio"
 	"fmt"
 	"os"
@@ -237,9 +238,9 @@ func Delete(chart string, dryRun bool) {
 }
 
 // UpgradeWithValues ...
-func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, dryRun bool, debug bool) HelmStatus {
+func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, timeout int, dryRun bool, debug bool) HelmStatus {
 	// Prepare parameters...
-	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--set", valuesSet}
+	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--set", valuesSet, "--timeout", strconv.Itoa(timeout)}
 	for _, v := range valueFiles {
 		myargs = append(myargs, "-f")
 		myargs = append(myargs, v)
