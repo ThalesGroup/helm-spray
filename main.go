@@ -83,13 +83,13 @@ round-trip to the Tiller server.
 
 There are four different ways you can express the chart you want to install:
 
- 1. By chart reference: helm spray stable/umbrella-chart
+ 1. By chart reference within a repo: helm spray stable/umbrella-chart
  2. By path to a packaged chart: helm spray umbrella-chart-1.0.0-rc.1+build.32.tgz
  3. By path to an unpacked chart directory: helm spray ./umbrella-chart
  4. By absolute URL: helm spray https://example.com/charts/umbrella-chart-1.0.0-rc.1+build.32.tgz
 
-It will install the latest version of that chart unless you also supply a version number with the
-'--version' flag.
+When specifying a chart reference or a chart URL, it installs the latest version
+of that chart unless you also supply a version number with the '--version' flag.
 
 To see the list of chart repositories, use 'helm repo list'. To search for
 charts in a repository, use 'helm search'.
@@ -111,27 +111,47 @@ func newSprayCmd(args []string) *cobra.Command {
 				return errors.New("This command needs at least 1 argument: chart name")
 			}
 
-			// TODO: check format for chart name (directory, url, tgz...)
 			p.chartName = args[0]
 
 			if p.chartVersion != "" {
-				if strings.Contains(p.chartName, "tgz") {
+				if strings.HasSuffix(p.chartName, "tgz") {
 					os.Stderr.WriteString("You cannot use --version together with chart archive\n")
 					os.Exit(1)
 				}
+
 				if _, err := os.Stat(p.chartName); err == nil {
 					os.Stderr.WriteString("You cannot use --version together with chart directory\n")
 					os.Exit(1)
 				}
 
-				log(1, "fetching chart \"%s\" version %s...", p.chartName, p.chartVersion)
-				helm.Fetch(p.chartName, p.chartVersion)
+				if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
+					os.Stderr.WriteString("You cannot use --version together with chart URL\n")
+					os.Exit(1)
+				}
 			}
 
 			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
 				os.Stderr.WriteString("You cannot use both --prefix-releases and --prefix-releases-with-namespace together\n")
-				fmt.Println("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 				os.Exit(1)
+			}
+
+
+			// If chart is specified through an url, the fetch it from the url.
+			if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
+				log(1, "fetching chart from url \"%s\"...", p.chartName)
+				p.chartName = helm.Fetch(p.chartName, "")
+
+			// If local file (or directory) does not exist, then fetch it from a repo.
+			} else if _, err := os.Stat(p.chartName); err != nil {
+				if p.chartVersion != "" {
+					log(1, "fetching chart \"%s\" version \"%s\" from repos...", p.chartName, p.chartVersion)
+				} else {
+					log(1, "fetching chart \"%s\" from repos...", p.chartName)
+				}
+				p.chartName = helm.Fetch(p.chartName, p.chartVersion)
+
+			} else {
+				log(1, "processing chart from local file or directory \"%s\"...", p.chartName)
 			}
 
 			return p.spray()

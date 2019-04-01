@@ -15,7 +15,7 @@ package helm
 import (
 	"bytes"
 	"strings"
-    "strconv"
+	"strconv"
 	"bufio"
 	"fmt"
 	"os"
@@ -91,6 +91,8 @@ func getStringBetween(value string, a string, b string) string {
 }
 
 // Parse the "helm status"-like output to extract releant information
+// WARNING: this code has been developed and tested with version 'v2.12.2' of Helm
+//          it may need to be adapted to other versions of Helm.
 func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	var out_str = string(outs)
 
@@ -301,8 +303,15 @@ func Status(chart string) HelmStatus {
 }
 
 // Fetch ...
-func Fetch(chart string, version string) {
-	cmd := exec.Command("helm", "fetch", chart, "--version", version)
+func Fetch(chart string, version string) string {
+	var command string
+	if version != "" {
+		command = "mkdir /tmp/$$ && helm fetch " + chart + " --destination /tmp/$$ --version " + version + " && ls /tmp/$$ && mv /tmp/$$/* . && rmdir /tmp/$$"
+	} else {
+		command = "mkdir /tmp/$$ && helm fetch " + chart + " --destination /tmp/$$  && ls /tmp/$$ && mv /tmp/$$/* . && rmdir /tmp/$$"
+	}
+
+	cmd := exec.Command("sh", "-c", command)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	cmd.Stderr = os.Stderr
@@ -310,4 +319,10 @@ func Fetch(chart string, version string) {
 		printError(err)
 		os.Exit(1)
 	}
+
+	output := cmdOutput.Bytes()
+	var output_str = string(output)
+	var result = strings.Trim (output_str, "\n")
+	return string(result)
 }
+
