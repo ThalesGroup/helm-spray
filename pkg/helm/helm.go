@@ -17,6 +17,7 @@ import (
 	"strings"
 	"strconv"
 	"bufio"
+	"io/ioutil"
 	"fmt"
 	"os"
 	"os/exec"
@@ -304,12 +305,19 @@ func Status(chart string) HelmStatus {
 
 // Fetch ...
 func Fetch(chart string, version string) string {
+	tempDir, err := ioutil.TempDir("", "spray-")
+	if err != nil {
+		printError(err)
+	}
+	defer os.RemoveAll(tempDir)
+
 	var command string
 	if version != "" {
-		command = "mkdir /tmp/$$ && helm fetch " + chart + " --destination /tmp/$$ --version " + version + " && ls /tmp/$$ && mv /tmp/$$/* . && rmdir /tmp/$$"
+		command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
 	} else {
-		command = "mkdir /tmp/$$ && helm fetch " + chart + " --destination /tmp/$$  && ls /tmp/$$ && mv /tmp/$$/* . && rmdir /tmp/$$"
+		command = "helm fetch " + chart + " --destination " + tempDir
 	}
+	command = command + " && ls " + tempDir + " && cp " + tempDir + "/* ."
 
 	cmd := exec.Command("sh", "-c", command)
 	cmdOutput := &bytes.Buffer{}
