@@ -405,6 +405,7 @@ w.Flush()
 						if !done {
 							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
 							os.Stderr.WriteString("==> Error: exit status 1\n")
+							os.Exit(1)
 						}
 					}
 
@@ -427,6 +428,7 @@ w.Flush()
 						if !done {
 							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
 							os.Stderr.WriteString("==> Error: exit status 1\n")
+							os.Exit(1)
 						}
 					}
 				}
