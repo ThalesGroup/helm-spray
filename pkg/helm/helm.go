@@ -15,7 +15,9 @@ package helm
 import (
 	"bytes"
 	"strings"
+	"strconv"
 	"bufio"
+	"io/ioutil"
 	"fmt"
 	"os"
 	"os/exec"
@@ -90,6 +92,8 @@ func getStringBetween(value string, a string, b string) string {
 }
 
 // Parse the "helm status"-like output to extract releant information
+// WARNING: this code has been developed and tested with version 'v2.12.2' of Helm
+//          it may need to be adapted to other versions of Helm.
 func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	var out_str = string(outs)
 
@@ -237,9 +241,9 @@ func Delete(chart string, dryRun bool) {
 }
 
 // UpgradeWithValues ...
-func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, dryRun bool, debug bool) HelmStatus {
+func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, timeout int, dryRun bool, debug bool) HelmStatus {
 	// Prepare parameters...
-	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--set", valuesSet}
+	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--set", valuesSet, "--timeout", strconv.Itoa(timeout)}
 	for _, v := range valueFiles {
 		myargs = append(myargs, "-f")
 		myargs = append(myargs, v)
@@ -300,8 +304,22 @@ func Status(chart string) HelmStatus {
 }
 
 // Fetch ...
-func Fetch(chart string, version string) {
-	cmd := exec.Command("helm", "fetch", chart, "--version", version)
+func Fetch(chart string, version string) string {
+	tempDir, err := ioutil.TempDir("", "spray-")
+	if err != nil {
+		printError(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	var command string
+	if version != "" {
+		command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
+	} else {
+		command = "helm fetch " + chart + " --destination " + tempDir
+	}
+	command = command + " && ls " + tempDir + " && cp " + tempDir + "/* ."
+
+	cmd := exec.Command("sh", "-c", command)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	cmd.Stderr = os.Stderr
@@ -309,4 +327,10 @@ func Fetch(chart string, version string) {
 		printError(err)
 		os.Exit(1)
 	}
+
+	output := cmdOutput.Bytes()
+	var output_str = string(output)
+	var result = strings.Trim (output_str, "\n")
+	return string(result)
 }
+

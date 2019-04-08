@@ -41,6 +41,7 @@ type sprayCmd struct {
 	valueFiles						[]string
 	valuesSet						string
 	force							bool
+	timeout		 					int
 	dryRun							bool
 	verbose							bool
 	debug							bool
@@ -82,13 +83,13 @@ round-trip to the Tiller server.
 
 There are four different ways you can express the chart you want to install:
 
- 1. By chart reference: helm spray stable/umbrella-chart
+ 1. By chart reference within a repo: helm spray stable/umbrella-chart
  2. By path to a packaged chart: helm spray umbrella-chart-1.0.0-rc.1+build.32.tgz
  3. By path to an unpacked chart directory: helm spray ./umbrella-chart
  4. By absolute URL: helm spray https://example.com/charts/umbrella-chart-1.0.0-rc.1+build.32.tgz
 
-It will install the latest version of that chart unless you also supply a version number with the
-'--version' flag.
+When specifying a chart reference or a chart URL, it installs the latest version
+of that chart unless you also supply a version number with the '--version' flag.
 
 To see the list of chart repositories, use 'helm repo list'. To search for
 charts in a repository, use 'helm search'.
@@ -110,26 +111,47 @@ func newSprayCmd(args []string) *cobra.Command {
 				return errors.New("This command needs at least 1 argument: chart name")
 			}
 
-			// TODO: check format for chart name (directory, url, tgz...)
 			p.chartName = args[0]
 
 			if p.chartVersion != "" {
-				if strings.Contains(p.chartName, "tgz") {
-					fmt.Println("You cannot use --version together with chart archive")
-					os.Exit(1)
-				}
-				if _, err := os.Stat(p.chartName); err == nil {
-					fmt.Println("You cannot use --version together with chart directory")
+				if strings.HasSuffix(p.chartName, "tgz") {
+					os.Stderr.WriteString("You cannot use --version together with chart archive\n")
 					os.Exit(1)
 				}
 
-				log(1, "fetching chart \"%s\" version %s...", p.chartName, p.chartVersion)
-				helm.Fetch(p.chartName, p.chartVersion)
+				if _, err := os.Stat(p.chartName); err == nil {
+					os.Stderr.WriteString("You cannot use --version together with chart directory\n")
+					os.Exit(1)
+				}
+
+				if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
+					os.Stderr.WriteString("You cannot use --version together with chart URL\n")
+					os.Exit(1)
+				}
 			}
 
 			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
-				fmt.Println("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
+				os.Stderr.WriteString("You cannot use both --prefix-releases and --prefix-releases-with-namespace together\n")
 				os.Exit(1)
+			}
+
+
+			// If chart is specified through an url, the fetch it from the url.
+			if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
+				log(1, "fetching chart from url \"%s\"...", p.chartName)
+				p.chartName = helm.Fetch(p.chartName, "")
+
+			// If local file (or directory) does not exist, then fetch it from a repo.
+			} else if _, err := os.Stat(p.chartName); err != nil {
+				if p.chartVersion != "" {
+					log(1, "fetching chart \"%s\" version \"%s\" from repos...", p.chartName, p.chartVersion)
+				} else {
+					log(1, "fetching chart \"%s\" from repos...", p.chartName)
+				}
+				p.chartName = helm.Fetch(p.chartName, p.chartVersion)
+
+			} else {
+				log(1, "processing chart from local file or directory \"%s\"...", p.chartName)
 			}
 
 			return p.spray()
@@ -147,6 +169,7 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.\nIf '--reset-values' is specified, this is ignored")
 	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
+	f.IntVar(&p.timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)\nand for liveness and readiness (like Deployments and regular Jobs completion)")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
 	f.BoolVar(&p.verbose, "verbose", false, "enable spray verbose output")
 	f.BoolVar(&p.debug, "debug", false, "enable helm debug output (also include spray verbose output)")
@@ -247,8 +270,8 @@ func (p *sprayCmd) spray() error {
 
 	if p.verbose {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-		fmt.Fprintln(w, "[spray]  \tsubchart\tis alias of\ttargeted\tweight\t|corresponding release\trevision\tstatus\t")
-		fmt.Fprintln(w, "[spray]  \t--------\t-----------\t--------\t------\t|---------------------\t--------\t------\t")
+		fmt.Fprintln(w, "[spray]  \t subchart\t is alias of\t targeted\t weight\t| corresponding release\t revision\t status\t")
+		fmt.Fprintln(w, "[spray]  \t --------\t -----------\t --------\t ------\t| ---------------------\t --------\t ------\t")
 
 		for _, dependency := range dependencies {
 			currentRevision := "None"
@@ -259,10 +282,10 @@ func (p *sprayCmd) spray() error {
 			}
 
 			if dependency.Alias == "" {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 
 			} else {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t%s\t%s\t%t\t%d\t|%s\t%s\t%s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 			}
 		}
 w.Flush()
@@ -304,7 +327,7 @@ w.Flush()
 					valuesSet = valuesSet + p.valuesSet
 
 					// Upgrade the Deployment
-					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.dryRun, p.debug)
+					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.timeout, p.dryRun, p.debug)
 					helmstatusses = append(helmstatusses, helmstatus)
 
 					log(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
@@ -338,42 +361,74 @@ w.Flush()
 
 			if !p.dryRun {
 				for _, status := range helmstatusses {
+					sleep_time := 5
+
 					// Wait for completion of the Deployments update
 					for _, dep := range status.Deployments {
-						for {
+						done := false
+
+						for i := 0; i < p.timeout; {
 							if p.verbose {
 								log(3, "waiting for Deployment \"%s\"", dep)
 							}
 							if kubectl.IsDeploymentUpToDate(dep, p.namespace) {
+								done = true
 								break
 							}
-							time.Sleep(5 * time.Second)
+							time.Sleep(time.Duration(sleep_time) * time.Second)
+							i = i + sleep_time
+						}
+
+						if !done {
+							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
+							os.Stderr.WriteString("==> Error: exit status 1\n")
+							os.Exit(1)
 						}
 					}
 
 					// Wait for completion of the StatefulSets update
 					for _, ss := range status.StatefulSets {
-						for {
+						done := false
+
+						for i := 0; i < p.timeout; {
 							if p.verbose {
 								log(3, "waiting for StatefulSet \"%s\"", ss)
 							}
 							if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
+								done = true
 								break
 							}
-							time.Sleep(5 * time.Second)
+							time.Sleep(time.Duration(sleep_time) * time.Second)
+							i = i + sleep_time
+						}
+
+						if !done {
+							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
+							os.Stderr.WriteString("==> Error: exit status 1\n")
+							os.Exit(1)
 						}
 					}
 
 					// Wait for completion of the Jobs
 					for _, job := range status.Jobs {
-						for {
+						done := false
+
+						for i := 0; i < p.timeout; {
 							if p.verbose {
 								log(3, "waiting for Job \"%s\"", job)
 							}
 							if kubectl.IsJobCompleted(job, p.namespace) {
+								done = true
 								break
 							}
-							time.Sleep(5 * time.Second)
+							time.Sleep(time.Duration(sleep_time) * time.Second)
+							i = i + sleep_time
+						}
+
+						if !done {
+							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
+							os.Stderr.WriteString("==> Error: exit status 1\n")
+							os.Exit(1)
 						}
 					}
 				}
