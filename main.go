@@ -206,33 +206,42 @@ func (p *sprayCmd) spray() error {
 	}
 
 	// Get the default values file of the umbrella chart and process the '#!include' directives that might be specified in it
-	updatedDefaultValues := processIncludeInValuesFile(chart)
+	// Only in case '--reuseValues' has not been set
+	var values chartutil.Values
+	if p.reuseValues == false {
+		updatedDefaultValues := processIncludeInValuesFile(chart)
 
-	// Load default values...
-	values, err := chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
-	if err != nil {
-		logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+		// Load default values...
+		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
+		if err != nil {
+			logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+		}
+
+		// Write default values to a temporary file and add it to the list of values files, 
+		// for later usage during the calls to helm
+		tempDir, err := ioutil.TempDir("", "spray-")
+	    if err != nil {
+			logErrorAndExit("Error creating temporary directory to write updated default values file for umbrella chart: %s", err)
+		}
+		defer os.RemoveAll(tempDir)
+
+		tempFile, err := ioutil.TempFile(tempDir, "updatedDefaultValues-*.yaml")
+		if err != nil {
+			logErrorAndExit("Error creating temporary file to write updated default values file for umbrella chart: %s", err)
+		}
+		defer os.Remove(tempFile.Name())
+
+		if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
+			logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
+		}
+		p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
+
+	} else {
+		values, err = chartutil.CoalesceValues(chart, chart.GetValues())
+		if err != nil {
+			logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+		}
 	}
-
-	// Write default values to a temporary file and add it to the list of values files, 
-	// for later usage during the calls to helm
-	tempDir, err := ioutil.TempDir("", "spray-")
-    if err != nil {
-		logErrorAndExit("Error creating temporary directory to write updated default values file for umbrella chart: %s", err)
-    }
-	defer os.RemoveAll(tempDir)
-
-	tempFile, err := ioutil.TempFile(tempDir, "updatedDefaultValues-*.yaml")
-	if err != nil {
-		logErrorAndExit("Error creating temporary file to write updated default values file for umbrella chart: %s", err)
-	}
-	defer os.Remove(tempFile.Name())
-
-	if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
-		logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
-	}
-	p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
-
 
 	// Build the list of all rependencies, and their key attributes
 	dependencies := make([]Dependency, len(reqs.Dependencies))
@@ -340,10 +349,10 @@ w.Flush()
 					}
 
 					if release, ok := helmReleases[dependency.CorrespondingReleaseName]; ok {
-						log(2, "upgrading release \"%s\": going from revision %d (status %s) to %d (target App Version: \"%s\")...", dependency.CorrespondingReleaseName, release.Revision, release.Status, release.Revision+1, dependency.AppVersion)
+						log(2, "upgrading release \"%s\": going from revision %d (status %s) to %d (appVersion %s)...", dependency.CorrespondingReleaseName, release.Revision, release.Status, release.Revision+1, dependency.AppVersion)
 
 					} else {
-						log(2, "upgrading release \"%s\": deploying first revision (target App Version: \"%s\")...", dependency.CorrespondingReleaseName, dependency.AppVersion)
+						log(2, "upgrading release \"%s\": deploying first revision (appVersion %s)...", dependency.CorrespondingReleaseName, dependency.AppVersion)
 					}
 
 					shouldWait = true
@@ -483,6 +492,13 @@ func getMaxWeight(v []Dependency) (m int) {
 // Search the "#!include" clauses in the default value file of the chart and replace them by the content
 // of the corresponding file.
 // Possible formats are:
+//  #! {{ .File.Get myfile.yaml }}
+//  #! {{ .File.Get myfile.yaml | . }}
+//  #! {{ .File.Get myfile.yaml | .tag }}
+//  #! {{ .File.Get myfile.yaml | indent 2 }}
+//  #! {{ .File.Get myfile.yaml | .tag.subTag | indent 4 }}
+
+// TODO TO DELETE
 //  #!include myfile.yaml
 //  #!include myfile.yaml | indent 2
 //  #!include myfile.yaml | .Values.tag
@@ -492,7 +508,8 @@ func processIncludeInValuesFile(chart *chartHapi.Chart) string {
 	defaultValues := string(chart.GetValues().GetRaw())
 
 	// Process includes with "| indent"
-	includeFileNameExp := regexp.MustCompile(`#!include\s+([a-zA-Z0-9_\\\/.\-\(\):]+)\s*(\|\s*(\.Values|\.Values\.([a-zA-Z0-9_\.\-]+)))?\s*(\|\s*indent\s*(\d+))?\s*\n`)
+//	includeFileNameExp := regexp.MustCompile(`#!include\s+([a-zA-Z0-9_\\\/.\-\(\):]+)\s*(\|\s*(\.Values|\.Values\.([a-zA-Z0-9_\.\-]+)))?\s*(\|\s*indent\s*(\d+))?\s*\n`)
+	includeFileNameExp := regexp.MustCompile(`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_\\\/.\-\(\):]+)\s*(\|\s*(\.|\.([a-zA-Z0-9_\.\-]+)))?\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`)
 	match := includeFileNameExp.FindStringSubmatch(defaultValues)
 
 	for ; len(match) != 0; {

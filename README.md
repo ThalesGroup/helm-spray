@@ -47,7 +47,7 @@ dependencies:
   condition: ms3.enabled
 ```
 
-A "values" file shall also be set with the weight ito be applied to each individual sub-chart. This weight shall be set in the `<chart name or alias>.weight` element. A good practice is that thei weigths are statically set in the default `values.yaml` file of the umbrella chart (and not in a yaml file provided using the `-f` option), as sub-chart's weight is not likely to change over time.
+A "values" file shall also be set with the weight it be applied to each individual sub-chart. This weight shall be set in the `<chart name or alias>.weight` element. A good practice is that thei weigths are statically set in the default `values.yaml` file of the umbrella chart (and not in a yaml file provided using the `-f` option), as sub-chart's weight is not likely to change over time.
 As an example corresponding to the above `requirement.yaml` file, the `values.yaml` file of the umbrella chart might be:
 ```
 micro-service-1:
@@ -72,6 +72,43 @@ ms3             7               Wed Jan 30 17:18:45 2019        DEPLOYED        
 ```
 
 Note: if an alias is set for a sub-chart, then this is this alias that should be used with the `--target` optioni, not the sub-chart name.
+
+### Values:
+
+The umbrella chart gathers several components or micro-services into a single solution. Values can then be set at many different places:
+- At micro-service level, inside the `values.yaml` file of each micro-service chart: these are common defaults values set by the micro-service developer, independently from the deployment context and location of the micro-service
+- At the solution level, inside the `values.yaml` file of the umbrella chart: these are values complementing or overwriting default values of the micro-services sub-charts, usually formalizing the deployment topology of the solution and giving the standard configuration of the underlying micro-services for any deployments of cwthis specific solution
+- At deployment time, using the `--values/-f` or `--set` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
+
+Within the micro-services paradigm, decoupling between micro-services is one of the most important criteria to respect. While values con be provided in a per-micro-service basis for the first and last places mentioned above, Helm only allows one single `values.yaml` file in the umbrella chart. All solution-level values should then be gathered into a single file, while it would have been better to provide values in several files, on a one-file-per-micro-service basis (to ensure decoupling of the micro-services configuration, even at solution level).
+Helm Spray is consequently adding this capability to have several values file in the umbrella chart and to include them into the single `values.yaml` file using the `#! {{ .File.Get <file name> }}` directive.
+- The file to be included shall be a valid yaml file.
+- It is possible to only include a sub-part of the yaml content by piping the `File.Get` directive with the path to be extracted and included: `#! {{ .File.Get <file name> | .for.bar }}`. `#! {{ .File.Get <file name> | . }}` is equivalent to `#! {{ .File.Get <file name> }}`.
+- It is possible to indent the included content using the `indent` directive: `#! {{ .File.Get <file name> | indent 2 }}`, `#! {{ .File.Get <file name> | .for.bar | indent 4 }}
+
+Note: The `{{ .File.Get ... }}` directive shall be prefixed by `#!` as the `values.yaml` file is parsed both with and without the included content. When parsed without the included content, it shall still be a valid yaml file, thus mandating the usage of a comment to specify the `{{ .File.Get ... }}` clause that is supported by default neither by yaml nor by Helm in default values files of charts. Usage of `#!` (with a bang '!') allows differentiating the include clauses from regular comments.
+Note also that when Helm is parsing the `values.yaml` file without the included content, some warning may be raised by helm if yaml elements are nil or empty (while they are not with the included content). A typical warning could be: 'Warning: Merging destination map for chart 'my-solution'. The destination item 'bar' is a table and ignoring the source 'bar' as it has a non-table value of: <nil>'
+
+Example of `values.yaml`:
+```
+micro-service-1:
+  weight: 0
+#! {{ .File.Get ms1.yaml }}
+
+micro-service-2:
+  weight: 1
+#! {{ .File.Get ms2.yaml | .foo | indent 2 }}
+
+ms3:
+  weight: 2
+  bar:
+#! {{ .File.Get ms3.yaml | .bar.baz | indent 4 }}
+# To prevent from having a warning when the file is processed by Helm, a fake content may be set here.
+# Format of the added dummy elements fully depends on the application's values structure
+    dummy:
+      dummy: "just here to prevent from a warning"
+
+```
 
 ### Flags:
 
