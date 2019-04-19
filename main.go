@@ -220,7 +220,7 @@ func (p *sprayCmd) spray() error {
 		// Write default values to a temporary file and add it to the list of values files, 
 		// for later usage during the calls to helm
 		tempDir, err := ioutil.TempDir("", "spray-")
-	    if err != nil {
+		if err != nil {
 			logErrorAndExit("Error creating temporary directory to write updated default values file for umbrella chart: %s", err)
 		}
 		defer os.RemoveAll(tempDir)
@@ -489,34 +489,45 @@ func getMaxWeight(v []Dependency) (m int) {
 	return m
 }
 
-// Search the "#!include" clauses in the default value file of the chart and replace them by the content
+// Search the "include" clauses in the default value file of the chart and replace them by the content
 // of the corresponding file.
-// Possible formats are:
-//  #! {{ .File.Get myfile.yaml }}
-//  #! {{ .File.Get myfile.yaml | . }}
-//  #! {{ .File.Get myfile.yaml | .tag }}
-//  #! {{ .File.Get myfile.yaml | indent 2 }}
-//  #! {{ .File.Get myfile.yaml | .tag.subTag | indent 4 }}
-
-// TODO TO DELETE
-//  #!include myfile.yaml
-//  #!include myfile.yaml | indent 2
-//  #!include myfile.yaml | .Values.tag
-//  #!include myfile.yaml | .Values.tag.subTag | indent 4
+// Allows:
+//   - Includeing a file:
+//       #! {{ .File.Get myfile.yaml }}
+//   - Including a sub-part of a file, picking a specific tag. Tags can target a Yaml element (aka table) or a
+//	   leaf value, but tags cannot target a list item.
+//       #! {{ pick (.File.Get myfile.yaml) tag }}
+//   - Indenting the include content:
+//       #! {{ .File.Get myfile.yaml | indent 2 }}
+//   - All combined...:
+//       #! {{ pick (.File.Get "myfile.yaml") "tag.subTag" | indent 4 }}
 //
 func processIncludeInValuesFile(chart *chartHapi.Chart) string {
 	defaultValues := string(chart.GetValues().GetRaw())
 
-	// Process includes with "| indent"
-//	includeFileNameExp := regexp.MustCompile(`#!include\s+([a-zA-Z0-9_\\\/.\-\(\):]+)\s*(\|\s*(\.Values|\.Values\.([a-zA-Z0-9_\.\-]+)))?\s*(\|\s*indent\s*(\d+))?\s*\n`)
-	includeFileNameExp := regexp.MustCompile(`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_\\\/.\-\(\):]+)\s*(\|\s*(\.|\.([a-zA-Z0-9_\.\-]+)))?\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`)
+	regularExpressions := []string {
+		// Expression #0: Process file inclusion ".File.Get" with optional "| indent"
+		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`,
+		// Expression #1: Process file inclusion ".File.Get", picking a specific element of the file content "pick (.File.Get <file>) <tag>", with an optional "| indent"
+		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`}
+
+	expressionNumber := 1
+	includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber-1])
 	match := includeFileNameExp.FindStringSubmatch(defaultValues)
 
 	for ; len(match) != 0; {
-		fullMatch := match[0]
-		includeFileName := match[1]
-		subValuePath := match[4]
-		indent := match[6]
+		var fullMatch, includeFileName, subValuePath, indent string
+		if expressionNumber == 1 {
+			fullMatch = match[0]
+			includeFileName = strings.Trim (match[1], `"`)
+			subValuePath = strings.Trim (match[2], `"`)
+			indent = match[4]
+		} else if expressionNumber == 2 {
+			fullMatch = match[0]
+			includeFileName = strings.Trim (match[1], `"`)
+			subValuePath = ""
+			indent = match[3]
+		}
 
 		replaced := false
 
@@ -529,14 +540,23 @@ func processIncludeInValuesFile(chart *chartHapi.Chart) string {
 						logErrorAndExit("Unable to read values from file \"%s\": %s", includeFileName, err)
 					}
 
-					subData, err := data.Table(subValuePath)
-					if err != nil {
-						logErrorAndExit("Unable to find path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
-					}
+					// Suppose that the element at the path is an element (list items are not supported)
+					if subData, err := data.Table(subValuePath); err == nil {
+						if dataToAdd, err = subData.YAML(); err != nil {
+							logErrorAndExit("Unable to generate a valid YAML file from values at path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+						}
 
-					dataToAdd, err = subData.YAML()
-					if err != nil {
-						logErrorAndExit("Unable to generate a value YAML file from values at path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+					// If it is not an element, then maybe it is directly a value
+					} else {
+						if val, err2 := data.PathValue(subValuePath); err2 == nil {
+							var ok bool
+							if dataToAdd, ok = val.(string); ok == false {
+								logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s\n%s", subValuePath, includeFileName, err, "Targeted item is most propably a list: not supported. Only elements (aka Yaml table) and leaf values are supported.")
+							}
+
+						} else {
+							logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+						}
 					}
 				}
 
@@ -561,6 +581,12 @@ func processIncludeInValuesFile(chart *chartHapi.Chart) string {
 		}
 
 		match = includeFileNameExp.FindStringSubmatch(defaultValues)
+
+		if len(match) == 0 && expressionNumber < len(regularExpressions) {
+			expressionNumber++
+		    includeFileNameExp = regexp.MustCompile(regularExpressions[expressionNumber-1])
+		    match = includeFileNameExp.FindStringSubmatch(defaultValues)
+		}
 	}
 
 	return defaultValues
