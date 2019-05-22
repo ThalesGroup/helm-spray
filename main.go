@@ -17,14 +17,18 @@ import (
 	"fmt"
 	"os"
 	"bufio"
+	"io/ioutil"
 	"strconv"
 	"strings"
+	"regexp"
 	"time"
 	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
 	"github.com/gemalto/helm-spray/pkg/kubectl"
+
 	chartutil "k8s.io/helm/pkg/chartutil"
+	chartHapi "k8s.io/helm/pkg/proto/hapi/chart"
 
 	"github.com/spf13/cobra"
 )
@@ -52,6 +56,7 @@ type Dependency struct {
 	Name						string
 	Alias						string
 	UsedName					string
+	AppVersion					string
 	Targeted					bool
 	Weight						int
 	CorrespondingReleaseName	string
@@ -115,24 +120,20 @@ func newSprayCmd(args []string) *cobra.Command {
 
 			if p.chartVersion != "" {
 				if strings.HasSuffix(p.chartName, "tgz") {
-					os.Stderr.WriteString("You cannot use --version together with chart archive\n")
-					os.Exit(1)
+					logErrorAndExit("You cannot use --version together with chart archive")
 				}
 
 				if _, err := os.Stat(p.chartName); err == nil {
-					os.Stderr.WriteString("You cannot use --version together with chart directory\n")
-					os.Exit(1)
+					logErrorAndExit("You cannot use --version together with chart directory")
 				}
 
 				if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
-					os.Stderr.WriteString("You cannot use --version together with chart URL\n")
-					os.Exit(1)
+					logErrorAndExit("You cannot use --version together with chart URL")
 				}
 			}
 
 			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
-				os.Stderr.WriteString("You cannot use both --prefix-releases and --prefix-releases-with-namespace together\n")
-				os.Exit(1)
+				logErrorAndExit("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 
 
@@ -189,24 +190,57 @@ func newSprayCmd(args []string) *cobra.Command {
 
 }
 
+// Running Spray command
 func (p *sprayCmd) spray() error {
 
 	// Load and valide the umbrella chart...
 	chart, err := chartutil.Load(p.chartName)
 	if err != nil {
-		panic(fmt.Errorf("%s", err))
+		logErrorAndExit("Error loading chart \"%s\": %s", p.chartName, err)
 	}
 
 	// Load and valid the requirements file...
 	reqs, err := chartutil.LoadRequirements(chart)
 	if err != nil {
-		panic(fmt.Errorf("%s", err))
+		logErrorAndExit("Error reading \"requirements.yaml\" file: %s", err)
 	}
 
-	// Load default values...
-	values, err := chartutil.CoalesceValues(chart, chart.GetValues())
-	if err != nil {
-		panic(fmt.Errorf("%s", err))
+	// Get the default values file of the umbrella chart and process the '#!include' directives that might be specified in it
+	// Only in case '--reuseValues' has not been set
+	var values chartutil.Values
+	if p.reuseValues == false {
+		updatedDefaultValues := processIncludeInValuesFile(chart)
+
+		// Load default values...
+		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
+		if err != nil {
+			logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+		}
+
+		// Write default values to a temporary file and add it to the list of values files, 
+		// for later usage during the calls to helm
+		tempDir, err := ioutil.TempDir("", "spray-")
+		if err != nil {
+			logErrorAndExit("Error creating temporary directory to write updated default values file for umbrella chart: %s", err)
+		}
+		defer os.RemoveAll(tempDir)
+
+		tempFile, err := ioutil.TempFile(tempDir, "updatedDefaultValues-*.yaml")
+		if err != nil {
+			logErrorAndExit("Error creating temporary file to write updated default values file for umbrella chart: %s", err)
+		}
+		defer os.Remove(tempFile.Name())
+
+		if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
+			logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
+		}
+		p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
+
+	} else {
+		values, err = chartutil.CoalesceValues(chart, chart.GetValues())
+		if err != nil {
+			logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+		}
 	}
 
 	// Build the list of all rependencies, and their key attributes
@@ -241,7 +275,7 @@ func (p *sprayCmd) spray() error {
 			w64 := depi["weight"].(float64)
 			w, err := strconv.Atoi(strconv.FormatFloat(w64, 'f', 0, 64))
 			if err != nil {
-				panic(fmt.Errorf("%s", err))
+				logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
 			}
 			dependencies[i].Weight = w
 		}
@@ -253,6 +287,14 @@ func (p *sprayCmd) spray() error {
 			dependencies[i].CorrespondingReleaseName = p.prefixReleases + "-" + dependencies[i].UsedName
 		} else {
 			dependencies[i].CorrespondingReleaseName = dependencies[i].UsedName
+		}
+
+		// Get the AppVersion that is contained in the Chart.yaml file of the dependency sub-chart
+		for _, subChart := range chart.GetDependencies() {
+			if subChart.GetMetadata().GetName() == dependencies[i].Name {
+				dependencies[i].AppVersion = subChart.GetMetadata().GetAppVersion()
+				break
+			}
 		}
 	}
 
@@ -307,10 +349,10 @@ w.Flush()
 					}
 
 					if release, ok := helmReleases[dependency.CorrespondingReleaseName]; ok {
-						log(2, "upgrading release \"%s\": going from revision %d (status %s) to %d...", dependency.CorrespondingReleaseName, release.Revision, release.Status, release.Revision+1)
+						log(2, "upgrading release \"%s\": going from revision %d (status %s) to %d (appVersion %s)...", dependency.CorrespondingReleaseName, release.Revision, release.Status, release.Revision+1, dependency.AppVersion)
 
 					} else {
-						log(2, "upgrading release \"%s\": deploying first revision...", dependency.CorrespondingReleaseName)
+						log(2, "upgrading release \"%s\": deploying first revision (appVersion %s)...", dependency.CorrespondingReleaseName, dependency.AppVersion)
 					}
 
 					shouldWait = true
@@ -348,8 +390,7 @@ w.Flush()
 					if helmstatus.Status == "" {
 						log(2, "Warning: no status returned by helm.")
 					} else if helmstatus.Status != "DEPLOYED" {
-						log(2, "Error: status returned by helm differs from \"DEPLOYED\". Cannot continue spray processing.")
-						os.Exit(1)
+						logErrorAndExit("Error: status returned by helm differs from \"DEPLOYED\". Cannot continue spray processing.")
 					}
 				}
 			}
@@ -380,9 +421,7 @@ w.Flush()
 						}
 
 						if !done {
-							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
-							os.Stderr.WriteString("==> Error: exit status 1\n")
-							os.Exit(1)
+							logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
 						}
 					}
 
@@ -403,9 +442,7 @@ w.Flush()
 						}
 
 						if !done {
-							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
-							os.Stderr.WriteString("==> Error: exit status 1\n")
-							os.Exit(1)
+							logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
 						}
 					}
 
@@ -426,9 +463,7 @@ w.Flush()
 						}
 
 						if !done {
-							os.Stderr.WriteString("Error: UPGRADE FAILED: timed out waiting for the condition\n")
-							os.Stderr.WriteString("==> Error: exit status 1\n")
-							os.Exit(1)
+							logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
 						}
 					}
 				}
@@ -454,6 +489,109 @@ func getMaxWeight(v []Dependency) (m int) {
 	return m
 }
 
+// Search the "include" clauses in the default value file of the chart and replace them by the content
+// of the corresponding file.
+// Allows:
+//   - Includeing a file:
+//       #! {{ .File.Get myfile.yaml }}
+//   - Including a sub-part of a file, picking a specific tag. Tags can target a Yaml element (aka table) or a
+//	   leaf value, but tags cannot target a list item.
+//       #! {{ pick (.File.Get myfile.yaml) tag }}
+//   - Indenting the include content:
+//       #! {{ .File.Get myfile.yaml | indent 2 }}
+//   - All combined...:
+//       #! {{ pick (.File.Get "myfile.yaml") "tag.subTag" | indent 4 }}
+//
+func processIncludeInValuesFile(chart *chartHapi.Chart) string {
+	defaultValues := string(chart.GetValues().GetRaw())
+
+	regularExpressions := []string {
+		// Expression #0: Process file inclusion ".File.Get" with optional "| indent"
+		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`,
+		// Expression #1: Process file inclusion ".File.Get", picking a specific element of the file content "pick (.File.Get <file>) <tag>", with an optional "| indent"
+		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`}
+
+	expressionNumber := 1
+	includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber-1])
+	match := includeFileNameExp.FindStringSubmatch(defaultValues)
+
+	for ; len(match) != 0; {
+		var fullMatch, includeFileName, subValuePath, indent string
+		if expressionNumber == 1 {
+			fullMatch = match[0]
+			includeFileName = strings.Trim (match[1], `"`)
+			subValuePath = strings.Trim (match[2], `"`)
+			indent = match[4]
+		} else if expressionNumber == 2 {
+			fullMatch = match[0]
+			includeFileName = strings.Trim (match[1], `"`)
+			subValuePath = ""
+			indent = match[3]
+		}
+
+		replaced := false
+
+		for _, f := range chart.GetFiles() {
+			if f.GetTypeUrl() == strings.Trim(strings.TrimSpace(includeFileName), "\"") {
+				dataToAdd := string(f.GetValue())
+				if subValuePath != "" {
+					data, err := chartutil.ReadValues(f.GetValue())
+					if err != nil {
+						logErrorAndExit("Unable to read values from file \"%s\": %s", includeFileName, err)
+					}
+
+					// Suppose that the element at the path is an element (list items are not supported)
+					if subData, err := data.Table(subValuePath); err == nil {
+						if dataToAdd, err = subData.YAML(); err != nil {
+							logErrorAndExit("Unable to generate a valid YAML file from values at path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+						}
+
+					// If it is not an element, then maybe it is directly a value
+					} else {
+						if val, err2 := data.PathValue(subValuePath); err2 == nil {
+							var ok bool
+							if dataToAdd, ok = val.(string); ok == false {
+								logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s\n%s", subValuePath, includeFileName, err, "Targeted item is most propably a list: not supported. Only elements (aka Yaml table) and leaf values are supported.")
+							}
+
+						} else {
+							logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+						}
+					}
+				}
+
+				if indent == "" {
+					defaultValues = strings.Replace(defaultValues, fullMatch, dataToAdd + "\n", -1)
+				} else {
+					nbrOfSpaces, err := strconv.Atoi(indent)
+					if err != nil {
+						logErrorAndExit("Error computing indentation value in \"#!include\" clause: %s", err)
+					}
+
+					toAdd := strings.Replace(dataToAdd, "\n", "\n" + strings.Repeat (" ", nbrOfSpaces), -1)
+					defaultValues = strings.Replace(defaultValues, fullMatch, strings.Repeat (" ", nbrOfSpaces) + toAdd + "\n", -1)
+				}
+
+				replaced = true
+			}
+		}
+
+		if !replaced {
+			logErrorAndExit("Unable to find file \"%s\" referenced in the \"%s\" clause of the default values file of the umbrella chart", match[1], strings.TrimRight(match[0], "\n"))
+		}
+
+		match = includeFileNameExp.FindStringSubmatch(defaultValues)
+
+		if len(match) == 0 && expressionNumber < len(regularExpressions) {
+			expressionNumber++
+		    includeFileNameExp = regexp.MustCompile(regularExpressions[expressionNumber-1])
+		    match = includeFileNameExp.FindStringSubmatch(defaultValues)
+		}
+	}
+
+	return defaultValues
+}
+
 // Log spray messages
 func log(level int, str string, params ...interface{}) {
 	var logStr = "[spray] "
@@ -470,6 +608,13 @@ func log(level int, str string, params ...interface{}) {
 
 	fmt.Println(logStr + fmt.Sprintf(str, params...))
 }
+
+// Log error and exit
+func logErrorAndExit(str string, params ...interface{}) {
+	os.Stderr.WriteString(fmt.Sprintf(str + "\n", params...))
+	os.Exit(1)
+}
+
 
 func main() {
 	cmd := newSprayCmd(os.Args[1:])
