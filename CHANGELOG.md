@@ -1,14 +1,23 @@
 # Release Notes
 
+## Version 3.4.2 - 05/23/2019
+* Bugfix regexp for '.File.Get' for windows [`3a2a527`](https://github.com/gemalto/helm-spray/commit/3a2a5279f078391e7d8b421d7e3aa69f425ebcac) (Patrice Amiel)
+
+## Version 3.4.1 - 05/23/2019
+* Bump to go 1.11 [`ea90f7a`](https://github.com/gemalto/helm-spray/commit/ea90f7a686065dec9a9308bce4ebc3ac03a8dd4a) (Christophe Vila)
+
+## Version 3.4.0 - 05/22/2019
+* Support of "Multiple values files in the umbrella chart" [`#20`](https://github.com/gemalto/helm-spray/pull/20) [`#21`](https://github.com/gemalto/helm-spray/pull/21) (Patrice Amiel)
+
 ## Version 3.3.0 - 03/25/2019
-* Enhance "wait liveness and readiness" and create capability to prefix releases names [#16](https://github.com/gemalto/helm-spray/pull/16)
+* Enhance "wait liveness and readiness" and create capability to prefix releases names [`#16`](https://github.com/gemalto/helm-spray/pull/16) (Patrice Amiel)
 
 ## Version 3.2.1 - 02/14/2019
-* Bugfixes on "waiting for Liveness and Readiness" step [#14](https://github.com/gemalto/helm-spray/pull/14)
+* Bugfixes on "waiting for Liveness and Readiness" step [`#14`](https://github.com/gemalto/helm-spray/pull/14) (Patrice Amiel)
 
 ## Version 3.2.0 - 02/01/2019
-* Fix plugin.yaml executable name according to OS [#5](https://github.com/gemalto/helm-spray/pull/5)
-* Support of alias and of the '--force' option [#3](https://github.com/gemalto/helm-spray/pull/3)
+* Fix plugin.yaml executable name according to OS [`#5`](https://github.com/gemalto/helm-spray/pull/5) (Christophe Vila)
+* Support of alias and of the '--force' option [`#3`](https://github.com/gemalto/helm-spray/pull/3) (Patrice Amiel)
 
 ## Version 3.1.0 - 01/27/2019
 * Adding support of several -f clauses
