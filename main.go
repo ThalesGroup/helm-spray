@@ -205,11 +205,11 @@ func (p *sprayCmd) spray() error {
 		logErrorAndExit("Error reading \"requirements.yaml\" file: %s", err)
 	}
 
-	// Get the default values file of the umbrella chart and process the '#!include' directives that might be specified in it
+	// Get the default values file of the umbrella chart and process the '#! .File.Get' directives that might be specified in it
 	// Only in case '--reuseValues' has not been set
 	var values chartutil.Values
 	if p.reuseValues == false {
-		updatedDefaultValues := processIncludeInValuesFile(chart)
+		updatedDefaultValues := processIncludeInValuesFile(chart, p.verbose)
 
 		// Load default values...
 		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
@@ -502,18 +502,22 @@ func getMaxWeight(v []Dependency) (m int) {
 //   - All combined...:
 //       #! {{ pick (.File.Get "myfile.yaml") "tag.subTag" | indent 4 }}
 //
-func processIncludeInValuesFile(chart *chartHapi.Chart) string {
+func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 	defaultValues := string(chart.GetValues().GetRaw())
 
 	regularExpressions := []string {
 		// Expression #0: Process file inclusion ".File.Get" with optional "| indent"
-		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`,
+		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`,
 		// Expression #1: Process file inclusion ".File.Get", picking a specific element of the file content "pick (.File.Get <file>) <tag>", with an optional "| indent"
-		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`}
+		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`}
 
 	expressionNumber := 1
 	includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber-1])
 	match := includeFileNameExp.FindStringSubmatch(defaultValues)
+
+	if verbose {
+		log(1, "looking for \"#! .File.Get\" clauses into the values file of the umbrella chart...")
+	}
 
 	for ; len(match) != 0; {
 		var fullMatch, includeFileName, subValuePath, indent string
@@ -533,6 +537,22 @@ func processIncludeInValuesFile(chart *chartHapi.Chart) string {
 
 		for _, f := range chart.GetFiles() {
 			if f.GetTypeUrl() == strings.Trim(strings.TrimSpace(includeFileName), "\"") {
+				if verbose {
+					if subValuePath == "" {
+						if indent == "" {
+							log(2, "found reference to values file \"%s\"", includeFileName)
+						} else {
+							log(2, "found reference to values file \"%s\" (with indent of \"%s\")", includeFileName, indent)
+						}
+					} else {
+						if indent == "" {
+							log(2, "found reference to values file \"%s\" (with yaml sub-path \"%s\")", includeFileName, subValuePath)
+						} else {
+							log(2, "found reference to values file \"%s\" (with yaml sub-path \"%s\" and indent of \"%s\")", includeFileName, subValuePath, indent)
+						}
+					}
+				}
+
 				dataToAdd := string(f.GetValue())
 				if subValuePath != "" {
 					data, err := chartutil.ReadValues(f.GetValue())
@@ -565,7 +585,7 @@ func processIncludeInValuesFile(chart *chartHapi.Chart) string {
 				} else {
 					nbrOfSpaces, err := strconv.Atoi(indent)
 					if err != nil {
-						logErrorAndExit("Error computing indentation value in \"#!include\" clause: %s", err)
+						logErrorAndExit("Error computing indentation value in \"#! .File.Get\" clause: %s", err)
 					}
 
 					toAdd := strings.Replace(dataToAdd, "\n", "\n" + strings.Repeat (" ", nbrOfSpaces), -1)
