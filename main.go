@@ -507,9 +507,9 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 
 	regularExpressions := []string {
 		// Expression #0: Process file inclusion ".File.Get" with optional "| indent"
-		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`,
+		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`,
 		// Expression #1: Process file inclusion ".File.Get", picking a specific element of the file content "pick (.File.Get <file>) <tag>", with an optional "| indent"
-		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`}
+		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`}
 
 	expressionNumber := 1
 	includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber-1])
