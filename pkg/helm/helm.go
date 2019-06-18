@@ -273,7 +273,7 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	if dryRun {
 		myargs = append(myargs, "--dry-run")
 	}
-	if !debug {
+	if debug {
 		myargs = append(myargs, "--debug")
 		fmt.Printf("[spray] running helm command for \"%s\": %v\n", releaseName, myargs)
 	}
