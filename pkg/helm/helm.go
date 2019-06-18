@@ -241,9 +241,22 @@ func Delete(chart string, dryRun bool) {
 }
 
 // UpgradeWithValues ...
-func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet string, force bool, timeout int, dryRun bool, debug bool) HelmStatus {
+func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string, force bool, timeout int, dryRun bool, debug bool) HelmStatus {
 	// Prepare parameters...
-	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--set", valuesSet, "--timeout", strconv.Itoa(timeout)}
+	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout)}
+
+	for _, v := range valuesSet {
+		myargs = append(myargs, "--set")
+		myargs = append(myargs, v)
+	}
+	for _, v := range valuesSetString {
+		myargs = append(myargs, "--set-string")
+		myargs = append(myargs, v)
+	}
+	for _, v := range valuesSetFile {
+		myargs = append(myargs, "--set-file")
+		myargs = append(myargs, v)
+	}
 	for _, v := range valueFiles {
 		myargs = append(myargs, "-f")
 		myargs = append(myargs, v)
@@ -260,7 +273,7 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	if dryRun {
 		myargs = append(myargs, "--dry-run")
 	}
-	if debug {
+	if !debug {
 		myargs = append(myargs, "--debug")
 		fmt.Printf("[spray] running helm command for \"%s\": %v\n", releaseName, myargs)
 	}
