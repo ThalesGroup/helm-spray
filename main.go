@@ -37,6 +37,7 @@ type sprayCmd struct {
 	chartName						string
 	chartVersion					string
 	targets							[]string
+	excludes						[]string
 	namespace						string
 	prefixReleases					string
 	prefixReleasesWithNamespace		bool
@@ -136,6 +137,9 @@ func newSprayCmd(args []string) *cobra.Command {
 				logErrorAndExit("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 
+			if len(p.targets) > 0 && len(p.excludes) > 0 {
+				logErrorAndExit("You cannot use both --target and --exclude together")
+			}
 
 			// If chart is specified through an url, the fetch it from the url.
 			if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
@@ -164,6 +168,7 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
 	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted")
+	f.StringSliceVarP(&p.excludes, "exclude", "x", []string{}, "specify the subchart to exclude (can specify multiple): process all subcharts except the ones specified in '--exclude'")
 	f.StringVarP(&p.prefixReleases, "prefix-releases", "", "", "prefix the releases by the given string, resulting into releases names formats:\n    \"<prefix>-<chart name or alias>\"\nAllowed characters are a-z A-Z 0-9 and -")
 	f.BoolVar(&p.prefixReleasesWithNamespace, "prefix-releases-with-namespace", false, "prefix the releases by the name of the namespace, resulting into releases names formats:\n    \"<namespace>-<chart name or alias>\"")
 	f.BoolVar(&p.resetValues, "reset-values", false, "when upgrading, reset the values to the ones built into the chart")
@@ -255,8 +260,8 @@ func (p *sprayCmd) spray() error {
 			dependencies[i].UsedName = dependencies[i].Alias
 		}
 
-		// Is dependency targeted? If --target is specificed, it should match the name of the current dependency; 
-		// if no --target is specified, then all dependencies are targeted
+		// Is dependency targeted? If --target or --excludes are specificed, it should match the name of the current dependency; 
+		// if neither --target nor --exclude are specified, then all dependencies are targeted
 		if len(p.targets) > 0 {
 			dependencies[i].Targeted = false
 			for j := range p.targets {
@@ -264,6 +269,15 @@ func (p *sprayCmd) spray() error {
 					dependencies[i].Targeted = true
 				}
 			}
+
+		} else if len(p.excludes) > 0 {
+			dependencies[i].Targeted = true
+			for j := range p.excludes {
+				if p.excludes[j] == dependencies[i].UsedName {
+					dependencies[i].Targeted = false
+				}
+			}
+
 		} else {
 			dependencies[i].Targeted = true
 		}
