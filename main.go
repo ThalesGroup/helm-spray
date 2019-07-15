@@ -37,13 +37,16 @@ type sprayCmd struct {
 	chartName						string
 	chartVersion					string
 	targets							[]string
+	excludes						[]string
 	namespace						string
 	prefixReleases					string
 	prefixReleasesWithNamespace		bool
 	resetValues						bool
 	reuseValues						bool
 	valueFiles						[]string
-	valuesSet						string
+	valuesSet						[]string
+	valuesSetString					[]string
+	valuesSetFile					[]string
 	force							bool
 	timeout		 					int
 	dryRun							bool
@@ -65,11 +68,12 @@ type Dependency struct {
 var (
 	globalUsage = `
 This command upgrades sub charts from an umbrella chart supporting deployment orders.
+A release is created for each subchart
 
 Arguments shall be a chart reference, a path to a packaged chart,
 a path to an unpacked chart directory or a URL.
 
-To override values in a chart, use either the '--values' flag and pass in a file
+To override values in a chart, use either the '--values'/'-f' flag and pass in a file name
 or use the '--set' flag and pass configuration from the command line.
 To force string values in '--set', use '--set-string' instead.
 In case a value is large and therefore you want not to use neither '--values' 
@@ -80,8 +84,8 @@ nor '--set', use '--set-file' to read the single large value from file.
  $ helm spray stable/umbrella-chart
  $ helm spray umbrella-chart-1.0.0-rc.1+build.32.tgz -f myvalues.yaml
 
-You can specify the '--values'/'-f' flag only one time.
-You can specify the '--set' flag one times, but several values comma separated.
+You can specify the '--values'/'-f' flag several times or provide a single comma separated value.
+You can specify the '--set' flag several times or provide a single comma separated value.
 To check the generated manifests of a release without installing the chart,
 the '--debug' and '--dry-run' flags can be combined. This will still require a
 round-trip to the Tiller server.
@@ -95,6 +99,8 @@ There are four different ways you can express the chart you want to install:
 
 When specifying a chart reference or a chart URL, it installs the latest version
 of that chart unless you also supply a version number with the '--version' flag.
+
+To see the list of installed releases, use 'helm list'.
 
 To see the list of chart repositories, use 'helm repo list'. To search for
 charts in a repository, use 'helm search'.
@@ -112,8 +118,10 @@ func newSprayCmd(args []string) *cobra.Command {
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			if len(args) != 1 {
+			if len(args) == 0 {
 				return errors.New("This command needs at least 1 argument: chart name")
+			} else if len(args) > 1 {
+				return errors.New("This command accepts only 1 argument: chart name")
 			}
 
 			p.chartName = args[0]
@@ -136,6 +144,9 @@ func newSprayCmd(args []string) *cobra.Command {
 				logErrorAndExit("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 
+			if len(p.targets) > 0 && len(p.excludes) > 0 {
+				logErrorAndExit("You cannot use both --target and --exclude together")
+			}
 
 			// If chart is specified through an url, the fetch it from the url.
 			if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
@@ -160,21 +171,23 @@ func newSprayCmd(args []string) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.StringSliceVarP(&p.valueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
 	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
 	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted")
+	f.StringSliceVarP(&p.excludes, "exclude", "x", []string{}, "specify the subchart to exclude (can specify multiple): process all subcharts except the ones specified in '--exclude'")
 	f.StringVarP(&p.prefixReleases, "prefix-releases", "", "", "prefix the releases by the given string, resulting into releases names formats:\n    \"<prefix>-<chart name or alias>\"\nAllowed characters are a-z A-Z 0-9 and -")
 	f.BoolVar(&p.prefixReleasesWithNamespace, "prefix-releases-with-namespace", false, "prefix the releases by the name of the namespace, resulting into releases names formats:\n    \"<namespace>-<chart name or alias>\"")
 	f.BoolVar(&p.resetValues, "reset-values", false, "when upgrading, reset the values to the ones built into the chart")
 	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.\nIf '--reset-values' is specified, this is ignored")
-	f.StringVarP(&p.valuesSet, "set", "", "", "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
+	f.StringSliceVarP(&p.valueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
+	f.StringSliceVarP(&p.valuesSet, "set", "", []string{}, "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
+	f.StringSliceVarP(&p.valuesSetString, "set-string", "", []string{}, "set STRING values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
+	f.StringSliceVarP(&p.valuesSetFile, "set-file", "", []string{}, "set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)")
 	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
 	f.IntVar(&p.timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)\nand for liveness and readiness (like Deployments and regular Jobs completion)")
 	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
 	f.BoolVar(&p.verbose, "verbose", false, "enable spray verbose output")
 	f.BoolVar(&p.debug, "debug", false, "enable helm debug output (also include spray verbose output)")
-	f.Parse(args)
 
 	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
 	if !p.debug {
@@ -187,7 +200,6 @@ func newSprayCmd(args []string) *cobra.Command {
 	}
 
 	return cmd
-
 }
 
 // Running Spray command
@@ -255,8 +267,8 @@ func (p *sprayCmd) spray() error {
 			dependencies[i].UsedName = dependencies[i].Alias
 		}
 
-		// Is dependency targeted? If --target is specificed, it should match the name of the current dependency; 
-		// if no --target is specified, then all dependencies are targeted
+		// Is dependency targeted? If --target or --excludes are specificed, it should match the name of the current dependency; 
+		// if neither --target nor --exclude are specified, then all dependencies are targeted
 		if len(p.targets) > 0 {
 			dependencies[i].Targeted = false
 			for j := range p.targets {
@@ -264,6 +276,15 @@ func (p *sprayCmd) spray() error {
 					dependencies[i].Targeted = true
 				}
 			}
+
+		} else if len(p.excludes) > 0 {
+			dependencies[i].Targeted = true
+			for j := range p.excludes {
+				if p.excludes[j] == dependencies[i].UsedName {
+					dependencies[i].Targeted = false
+				}
+			}
+
 		} else {
 			dependencies[i].Targeted = true
 		}
@@ -366,10 +387,10 @@ w.Flush()
 							valuesSet = valuesSet + dep.UsedName + ".enabled=false,"
 						}
 					}
-					valuesSet = valuesSet + p.valuesSet
+					p.valuesSet = append(p.valuesSet, valuesSet)
 
 					// Upgrade the Deployment
-					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.force, p.timeout, p.dryRun, p.debug)
+					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, p.valuesSet, p.valuesSetString, p.valuesSetFile, p.force, p.timeout, p.dryRun, p.debug)
 					helmstatusses = append(helmstatusses, helmstatus)
 
 					log(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
@@ -507,9 +528,9 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 
 	regularExpressions := []string {
 		// Expression #0: Process file inclusion ".File.Get" with optional "| indent"
-		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`,
+		`#!\s*\{\{\s*pick\s*\(\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`,
 		// Expression #1: Process file inclusion ".File.Get", picking a specific element of the file content "pick (.File.Get <file>) <tag>", with an optional "| indent"
-		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*\n`}
+		`#!\s*\{\{\s*\.File\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`}
 
 	expressionNumber := 1
 	includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber-1])
@@ -604,8 +625,8 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 
 		if len(match) == 0 && expressionNumber < len(regularExpressions) {
 			expressionNumber++
-		    includeFileNameExp = regexp.MustCompile(regularExpressions[expressionNumber-1])
-		    match = includeFileNameExp.FindStringSubmatch(defaultValues)
+			includeFileNameExp = regexp.MustCompile(regularExpressions[expressionNumber-1])
+			match = includeFileNameExp.FindStringSubmatch(defaultValues)
 		}
 	}
 

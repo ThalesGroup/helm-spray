@@ -115,9 +115,10 @@ ms3:
 ```
       --debug                            enable helm debug output (also include spray verbose output)
       --dry-run                          simulate a spray
+  -x, --exclude strings                  specify the subchart to exclude (can specify multiple): process all subcharts except the ones specified in '--exclude'
       --force                            force resource update through delete/recreate if needed
   -h, --help                             help for helm
-  -n, --namespace string                 namespace to spray the chart into. (default "default")
+  -n, --namespace string                 namespace to spray the chart into (default "default")
       --prefix-releases string           prefix the releases by the given string, resulting into releases names formats:
                                              "<prefix>-<chart name or alias>"
                                          Allowed characters are a-z A-Z 0-9 and -
@@ -125,9 +126,13 @@ ms3:
                                              "<namespace>-<chart name or alias>"
       --reset-values                     when upgrading, reset the values to the ones built into the chart
       --reuse-values                     when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.
-                                         If '--reset-values' is specified, this is ignored.
-      --set string                       set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
+                                         If '--reset-values' is specified, this is ignored
+      --set strings                      set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
+      --set-file strings                 set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)
+      --set-string strings               set STRING values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)
   -t, --target strings                   specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted
+      --timeout int                      time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)
+                                         and for liveness and readiness (like Deployments and regular Jobs completion) (default 300)
   -f, --values strings                   specify values in a YAML file or a URL (can specify multiple)
       --verbose                          enable spray verbose output
       --version string                   specify the exact chart version to install. If this is not specified, the latest version is installed
