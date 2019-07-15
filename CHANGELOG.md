@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 3.4.3 - 07/15/2019
+* Support of new flags (--exclude, --set-file, --set-string) + bugfix #! .File.Get clause [`#28`](https://github.com/gemalto/helm-spray/pull/28) (Patrice Amiel) 
+
 ## Version 3.4.2 - 05/23/2019
 * Bugfix regexp for '.File.Get' for windows [`3a2a527`](https://github.com/gemalto/helm-spray/commit/3a2a5279f078391e7d8b421d7e3aa69f425ebcac) (Patrice Amiel)
 
