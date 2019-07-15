@@ -114,7 +114,7 @@ func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	// Extract the resources
 	helmstatus.Resources = getStringAfter (out_str, "RESOURCES:")
 
-	// ... and get the Deployments from the resources (could be a 'v1beta1/Deployment' or a 'v1/Deployment' resource)
+	// ... and get the Deployments from the resources
 	var res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Deployment", "==>") + "\n" + 
 				getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/Deployment", "==>") + "\n" + 
 				getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/Deployment", "==>")
