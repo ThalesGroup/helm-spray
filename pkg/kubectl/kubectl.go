@@ -91,10 +91,15 @@ func IsDeploymentUpToDate(deployment string, namespace string) bool {
 func IsStatefulSetUpToDate(deployment string, namespace string) bool {
 	desired := getDesired("statefulset", deployment, namespace)
 	ready := getReady("statefulset", deployment, namespace)
-	if desired == ready {
-		return true
-	} else {
+	current := getStatefulsetCurrent(deployment, namespace)
+	if desired != ready {
 		return false
+	} else {
+		if (desired == current) {
+			return true
+		} else {
+			return false
+		}
 	}
 }
 
@@ -125,6 +130,10 @@ func getDesired(k8sObjectType string, objectName string, namespace string) strin
 
 func getCurrent(k8sObjectType string, objectName string, namespace string) string {
 	return getObjectDescriptionItem(k8sObjectType, objectName, namespace, ".status.replicas")
+}
+
+func getStatefulsetCurrent(objectName string, namespace string) string {
+	return getObjectDescriptionItem("statefulset", objectName, namespace, ".status.currentReplicas")
 }
 
 func getReady(k8sObjectType string, objectName string, namespace string) string {
