@@ -81,28 +81,28 @@ The umbrella chart gathers several components or micro-services into a single so
 - At deployment time, using the `--values/-f` or `--set` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
 
 Within the micro-services paradigm, decoupling between micro-services is one of the most important criteria to respect. While values con be provided in a per-micro-service basis for the first and last places mentioned above, Helm only allows one single `values.yaml` file in the umbrella chart. All solution-level values should then be gathered into a single file, while it would have been better to provide values in several files, on a one-file-per-micro-service basis (to ensure decoupling of the micro-services configuration, even at solution level).
-Helm Spray is consequently adding this capability to have several values file in the umbrella chart and to include them into the single `values.yaml` file using the `#! {{ .File.Get <file name> }}` directive.
+Helm Spray is consequently adding this capability to have several values file in the umbrella chart and to include them into the single `values.yaml` file using the `#! {{ .Files.Get <file name> }}` directive.
 - The file to be included shall be a valid yaml file.
-- It is possible to only include a sub-part of the yaml content by picking an element of the `File.Get`, specifying the path to be extracted and included: `#! {{ pick (.File.Get <file name>) for.bar }}`. Only paths targeting a Yaml element or a leaf value can be provided. Paths targeted lists are not supported.
-- It is possible to indent the included content using the `indent` directive: `#! {{ .File.Get <file name> | indent 2 }}`, `#! {{ pick (.File.Get <file name>) for.bar | indent 4 }}
+- It is possible to only include a sub-part of the yaml content by picking an element of the `Files.Get`, specifying the path to be extracted and included: `#! {{ pick (.Files.Get <file name>) for.bar }}`. Only paths targeting a Yaml element or a leaf value can be provided. Paths targeted lists are not supported.
+- It is possible to indent the included content using the `indent` directive: `#! {{ .Files.Get <file name> | indent 2 }}`, `#! {{ pick (.Files.Get <file name>) for.bar | indent 4 }}
 
-Note: The `{{ .File.Get ... }}` directive shall be prefixed by `#!` as the `values.yaml` file is parsed both with and without the included content. When parsed without the included content, it shall still be a valid yaml file, thus mandating the usage of a comment to specify the `{{ .File.Get ... }}` clause that is by default supported by neither yaml nor Helm in default values files of charts. Usage of `#!` (with a bang '!') allows differentiating the include clauses from regular comments.
+Note: The `{{ .Files.Get ... }}` directive shall be prefixed by `#!` as the `values.yaml` file is parsed both with and without the included content. When parsed without the included content, it shall still be a valid yaml file, thus mandating the usage of a comment to specify the `{{ .Files.Get ... }}` clause that is by default supported by neither yaml nor Helm in default values files of charts. Usage of `#!` (with a bang '!') allows differentiating the include clauses from regular comments.
 Note also that when Helm is parsing the `values.yaml` file without the included content, some warning may be raised by helm if yaml elements are nil or empty (while they are not with the included content). A typical warning could be: 'Warning: Merging destination map for chart 'my-solution'. The destination item 'bar' is a table and ignoring the source 'bar' as it has a non-table value of: <nil>'
 
 Example of `values.yaml`:
 ```
 micro-service-1:
   weight: 0
-#! {{ .File.Get ms1.yaml }}
+#! {{ .Files.Get ms1.yaml }}
 
 micro-service-2:
   weight: 1
-#! {{ pick (.File.Get ms2.yaml) foo | indent 2 }}
+#! {{ pick (.Files.Get ms2.yaml) foo | indent 2 }}
 
 ms3:
   weight: 2
   bar:
-#! {{ pick (.File.Get ms3.yaml) bar.baz | indent 4 }}
+#! {{ pick (.Files.Get ms3.yaml) bar.baz | indent 4 }}
 # To prevent from having a warning when the file is processed by Helm, a fake content may be set here.
 # Format of the added dummy elements fully depends on the application's values structure
     dummy:
