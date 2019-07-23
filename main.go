@@ -279,9 +279,12 @@ func (p *sprayCmd) spray() error {
 	if err := yaml.Unmarshal([]byte (localValues), &localValuesAsMap); err != nil {
 		logErrorAndExit("Error parsing values to get 'tags' content")
 	}
-	providedTags := localValuesAsMap["tags"].(map[string]interface{})
+	var providedTags map[string]interface{}
+    if localValuesAsMap["tags"] != nil {
+        providedTags = localValuesAsMap["tags"].(map[string]interface{})
+    }
 
-	if p.verbose && (len (providedTags) > 0) {
+	if p.verbose {
 		log(1, "looking for \"tags\" in values provided through \"--values/-f\", \"--set\", \"--set-string\", and \"--set-file\"...")
 		for k, v := range providedTags {
 			log(2, fmt.Sprintf("found tag \"%s: %s\"", k, fmt.Sprint(v)))
