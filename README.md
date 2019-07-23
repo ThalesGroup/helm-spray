@@ -71,7 +71,7 @@ micro-service-2 21              Wed Jan 30 17:18:55 2019        DEPLOYED        
 ms3             7               Wed Jan 30 17:18:45 2019        DEPLOYED        solution-0.1    0.1             default
 ```
 
-Note: if an alias is set for a sub-chart, then this is this alias that should be used with the `--target` optioni, not the sub-chart name.
+Note: if an alias is set for a sub-chart, then this is this alias that should be used with the `--target` option, not the sub-chart name.
 
 ### Values:
 
@@ -109,6 +109,38 @@ ms3:
       dummy: "just here to prevent from a warning"
 
 ```
+
+### Tags and Conditions:
+
+As Helm Spray internally uses the Helm Conditions for its own purpose, it is not possible to specify other Conditions that the ones required by Helm Spray itself (`<chart name or alias>.enabled`). Such extra Conditions will be ignored.
+
+However, Helm Spray is compatible with Tags set in the `requirements.yaml` file, as displayed in the following example:
+```
+dependencies:
+- name: micro-service-1
+  version: ~1.2
+  repository: http://chart-museum/charts
+  condition: micro-service-1.enabled
+  tags:
+  - common
+  - front-end
+- name: micro-service-2
+  version: ~2.3
+  repository: http://chart-museum/charts
+  condition: micro-service-2.enabled
+  tags:
+  - common
+  - back-end
+- name: micro-service-3
+  alias: ms3
+  version: ~1.1
+  repository: http://chart-museum/charts
+  condition: ms3.enabled
+```
+With such a configuration, if Helm Spray is called with the `--set tags.front-end=true` argument, the `micro-service-1` will be deployed (because it has a tag that matches one of those given in the command line) and `micro-service-3` as well (because it has no tag, so no restriction applies), while `micro-service-2` will not be deployed (because it has tags and none of them is matching one of those given in the command line).
+
+Note that tags shall be provided through the `--values`/`-f`, `--set`, `--set-string`, or `--set-file` flags: values coming from the server/Tiller (for example when using the `--reuse-values` flag) are not considered.
+Tags values can also not be templated (e.g. `tags.front-end` set to `{{ .Values.x.y.z }}` will not be processed).
 
 ### Flags:
 
@@ -168,10 +200,4 @@ $ SKIP_BIN_INSTALL=1 helm plugin install $GOPATH/src/github.com/gemalto/helm-spr
 
 That last command will skip fetching the binary install and use the one you
 built.
-
-
-
-
-
-
 

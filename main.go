@@ -31,6 +31,7 @@ import (
 	chartHapi "k8s.io/helm/pkg/proto/hapi/chart"
 
 	"github.com/spf13/cobra"
+	"github.com/ghodss/yaml"
 )
 
 type sprayCmd struct {
@@ -63,6 +64,8 @@ type Dependency struct {
 	Targeted					bool
 	Weight						int
 	CorrespondingReleaseName	string
+	HasTags						bool
+	AllowedByTags				bool
 }
 
 var (
@@ -86,6 +89,8 @@ nor '--set', use '--set-file' to read the single large value from file.
 
 You can specify the '--values'/'-f' flag several times or provide a single comma separated value.
 You can specify the '--set' flag several times or provide a single comma separated value.
+Helm Spray does not support Helm Conditions, but supports Helm Tags, with some restrictions.
+
 To check the generated manifests of a release without installing the chart,
 the '--debug' and '--dry-run' flags can be combined. This will still require a
 round-trip to the Tiller server.
@@ -246,7 +251,7 @@ func (p *sprayCmd) spray() error {
 		if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
 			logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
 		}
-		p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
+		p.valueFiles = append(p.valueFiles, tempFile.Name())
 
 	} else {
 		values, err = chartutil.CoalesceValues(chart, chart.GetValues())
@@ -255,7 +260,35 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
-	// Build the list of all rependencies, and their key attributes
+
+	// Get the list of "tags" specified in the values...
+	// (locally-provided values only; values coming from server are not considered)
+	allDisabled := ""
+	for _, req := range reqs.Dependencies {
+		if req.Alias == "" {
+			allDisabled = allDisabled + req.Name + ".enabled=false,"
+		} else {
+			allDisabled = allDisabled + req.Alias + ".enabled=false,"
+		}
+	}
+	newValuesSet := append(p.valuesSet, allDisabled)
+
+	localValues := helm.GetLocalValues(p.chartName, p.valueFiles, newValuesSet, p.valuesSetString, p.valuesSetFile)
+
+	localValuesAsMap := map[string]interface{}{}
+	if err := yaml.Unmarshal([]byte (localValues), &localValuesAsMap); err != nil {
+		logErrorAndExit("Error parsing values to get 'tags' content")
+	}
+	providedTags := localValuesAsMap["tags"].(map[string]interface{})
+
+	if p.verbose && (len (providedTags) > 0) {
+		log(1, "looking for \"tags\" in values provided through \"--values/-f\", \"--set\", \"--set-string\", and \"--set-file\"...")
+		for k, v := range providedTags {
+			log(2, fmt.Sprintf("found tag \"%s: %s\"", k, fmt.Sprint(v)))
+		}
+	}
+
+	// Build the list of all dependencies, and their key attributes
 	dependencies := make([]Dependency, len(reqs.Dependencies))
 	for i, req := range reqs.Dependencies {
 		// Dependency name and alias
@@ -288,6 +321,26 @@ func (p *sprayCmd) spray() error {
 		} else {
 			dependencies[i].Targeted = true
 		}
+
+
+		// Loop on the tags associated to the dependency and check with the tags provided in the values
+		dependencies[i].AllowedByTags = false
+		if len (req.Tags) == 0 {
+			dependencies[i].HasTags = false
+			dependencies[i].AllowedByTags = true
+
+		} else {
+			dependencies[i].HasTags = true
+
+			for _, tag := range req.Tags {
+				for k, v := range providedTags {
+					if k == tag && v == true {
+						dependencies[i].AllowedByTags = true
+					}
+				}
+			}
+		}
+
 
 		// Get weight of the dependency. If no weight is specified, setting it to 0
 		dependencies[i].Weight = 0
@@ -344,14 +397,23 @@ func (p *sprayCmd) spray() error {
 				currentStatus = release.Status
 			}
 
-			if dependency.Alias == "" {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
-
-			} else {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+			name := dependency.Name
+			alias := "-"
+			if dependency.Alias != "" {
+				name = dependency.Alias
+				alias = dependency.Name
 			}
+
+			targeted := fmt.Sprint (dependency.Targeted)
+			if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == true) {
+				targeted = "true (tag match)"
+			} else if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == false) {
+				targeted = "false (no tag match)"
+			}
+
+			fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 		}
-w.Flush()
+		w.Flush()
 	}
 
 	// Loop on the increasing weight
@@ -362,7 +424,7 @@ w.Flush()
 
 		// Upgrade the targeted Deployments corresponding the the current weight
 		for _, dependency := range dependencies {
-			if dependency.Targeted {
+			if dependency.Targeted  && dependency.AllowedByTags == true {
 				if dependency.Weight == i {
 					if firstInWeight {
 						log(1, "processing sub-charts of weight %d", dependency.Weight)
