@@ -61,6 +61,8 @@ ms3:
 ```
 Several sub-charts may have the same weight, meaning that they will be upgraded together.
 Upgrade of sub-charts of weight n+1 will only be triggered when upgrade of sub-charts of weight n is completed.
+Note also that while weights should primarilly be set in the `values.yaml` file of the umbrella chart, it is also possible to set them using the `--values/-f` or `--set` flags of the command line, for example to temporarilly overwrite a weight value. If so, take care that weight values provided through the command line are not taken into account for the next calls to Helm Spray, including if the `--reuse-values` flag is used: they would have to be provided again at each call.
+
 
 Helm Spray creates one helm Release per sub-chart. Releases are individually upgraded when running the helm spray process, in particular when using the `--target` option.
 The name and version of the umbrella chart is set as the Chart name for all the Revisions.
@@ -78,7 +80,7 @@ Note: if an alias is set for a sub-chart, then this is this alias that should be
 The umbrella chart gathers several components or micro-services into a single solution. Values can then be set at many different places:
 - At micro-service level, inside the `values.yaml` file of each micro-service chart: these are common defaults values set by the micro-service developer, independently from the deployment context and location of the micro-service
 - At the solution level, inside the `values.yaml` file of the umbrella chart: these are values complementing or overwriting default values of the micro-services sub-charts, usually formalizing the deployment topology of the solution and giving the standard configuration of the underlying micro-services for any deployments of cwthis specific solution
-- At deployment time, using the `--values/-f` or `--set` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
+- At deployment time, using the `--values/-f`, `--set`, `--set-string`, or `--set-file` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
 
 Within the micro-services paradigm, decoupling between micro-services is one of the most important criteria to respect. While values con be provided in a per-micro-service basis for the first and last places mentioned above, Helm only allows one single `values.yaml` file in the umbrella chart. All solution-level values should then be gathered into a single file, while it would have been better to provide values in several files, on a one-file-per-micro-service basis (to ensure decoupling of the micro-services configuration, even at solution level).
 Helm Spray is consequently adding this capability to have several values file in the umbrella chart and to include them into the single `values.yaml` file using the `#! {{ .File.Get <file name> }}` directive.

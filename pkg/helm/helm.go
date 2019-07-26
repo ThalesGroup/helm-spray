@@ -301,10 +301,15 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	return helmstatus
 }
 
-// GetLocalValues ...
-func GetLocalValues(chartPath string, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) string {
+// Template ...
+func Template(chartPath string, fileToExecute string, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) string {
 	// Prepare parameters...
 	var myargs []string = []string{"template", chartPath, "--debug"}
+
+	if fileToExecute != "" {
+		myargs = append(myargs, "--execute")
+		myargs = append(myargs, fileToExecute)
+	}
 
 	for _, v := range valuesSet {
 		myargs = append(myargs, "--set")
@@ -337,9 +342,7 @@ func GetLocalValues(chartPath string, valueFiles []string, valuesSet []string, v
 		os.Exit(1)
 	}
 
-	values := getStringBetween(string(output), "COMPUTED VALUES:", "HOOKS:")
-
-	return values
+	return string(output)
 }
 
 // Status ...

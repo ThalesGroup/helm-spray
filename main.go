@@ -22,6 +22,7 @@ import (
 	"strings"
 	"regexp"
 	"time"
+	"reflect"
 	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
@@ -31,7 +32,6 @@ import (
 	chartHapi "k8s.io/helm/pkg/proto/hapi/chart"
 
 	"github.com/spf13/cobra"
-	"github.com/ghodss/yaml"
 )
 
 type sprayCmd struct {
@@ -260,29 +260,17 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
+	// Coalesce these values with the values provided in the command line
+	providedValues := getProvidedValues(p.chartName, chart, p.valueFiles, p.valuesSet, p.valuesSetString, p.valuesSetFile)
+	values.MergeInto (providedValues)
 
 	// Get the list of "tags" specified in the values...
 	// (locally-provided values only; values coming from server are not considered)
-	allDisabled := ""
-	for _, req := range reqs.Dependencies {
-		if req.Alias == "" {
-			allDisabled = allDisabled + req.Name + ".enabled=false,"
-		} else {
-			allDisabled = allDisabled + req.Alias + ".enabled=false,"
-		}
-	}
-	newValuesSet := append(p.valuesSet, allDisabled)
-
-	localValues := helm.GetLocalValues(p.chartName, p.valueFiles, newValuesSet, p.valuesSetString, p.valuesSetFile)
-
-	localValuesAsMap := map[string]interface{}{}
-	if err := yaml.Unmarshal([]byte (localValues), &localValuesAsMap); err != nil {
-		logErrorAndExit("Error parsing values to get 'tags' content")
-	}
 	var providedTags map[string]interface{}
-    if localValuesAsMap["tags"] != nil {
-        providedTags = localValuesAsMap["tags"].(map[string]interface{})
-    }
+	tags, err := values.Table("tags")
+	if err == nil {
+		providedTags = tags.AsMap()
+	}
 
 	if p.verbose {
 		log(1, "looking for \"tags\" in values provided through \"--values/-f\", \"--set\", \"--set-string\", and \"--set-file\"...")
@@ -290,6 +278,7 @@ func (p *sprayCmd) spray() error {
 			log(2, fmt.Sprintf("found tag \"%s: %s\"", k, fmt.Sprint(v)))
 		}
 	}
+
 
 	// Build the list of all dependencies, and their key attributes
 	dependencies := make([]Dependency, len(reqs.Dependencies))
@@ -325,7 +314,6 @@ func (p *sprayCmd) spray() error {
 			dependencies[i].Targeted = true
 		}
 
-
 		// Loop on the tags associated to the dependency and check with the tags provided in the values
 		dependencies[i].AllowedByTags = false
 		if len (req.Tags) == 0 {
@@ -344,18 +332,21 @@ func (p *sprayCmd) spray() error {
 			}
 		}
 
-
 		// Get weight of the dependency. If no weight is specified, setting it to 0
 		dependencies[i].Weight = 0
-		depi, err := values.Table(dependencies[i].UsedName)
-		if (err == nil && depi["weight"] != nil) {
-			w64 := depi["weight"].(float64)
-			w, err := strconv.Atoi(strconv.FormatFloat(w64, 'f', 0, 64))
-			if err != nil {
-				logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
-			}
-			dependencies[i].Weight = w
+		wf, err := values.PathValue(dependencies[i].UsedName + ".weight")
+		if err != nil {
+			logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
 		}
+
+		if reflect.TypeOf(wf).String() != "float64" { // Value retrieved from the map is a float (even if it expressed as an int). We will convert it after
+			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
+		}
+		wi := int(wf.(float64))
+		if wi < 0 {
+			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be positive or equal to zero", dependencies[i].UsedName)
+		}
+		dependencies[i].Weight = wi
 
 		// Compute the corresponding release name
 		if p.prefixReleasesWithNamespace == true {
@@ -698,6 +689,37 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 	return defaultValues
 }
 
+
+// Get the values provided in the command line (i.e. using the --values/-f, --set, --set-string, and --set-file flags as a chartutil.Values object
+func getProvidedValues(chartName string, chart *chartHapi.Chart, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) chartutil.Values {
+	reqs, _ := chartutil.LoadRequirements(chart)
+
+	// Use the Helm template command to get the values provided in the command line
+	allDisabled := ""
+	for _, req := range reqs.Dependencies {
+		if req.Alias == "" {
+			allDisabled = allDisabled + req.Name + ".enabled=false,"
+		} else {
+			allDisabled = allDisabled + req.Alias + ".enabled=false,"
+		}
+	}
+	newValuesSet := append(valuesSet, allDisabled)
+	templateOutput := helm.Template(chartName, "", valueFiles, newValuesSet, valuesSetString, valuesSetFile)
+
+	// Extract from this output the list of values as a Yaml string
+	valuesYaml := getStringBetween(string(templateOutput), "USER-SUPPLIED VALUES:", "COMPUTED VALUES:")
+//	valuesYaml := getStringBetween(string(templateOutput), "COMPUTED VALUES:", "HOOKS:")
+
+	// Transform it into a Values object
+	values, err := chartutil.ReadValues([]byte(valuesYaml))
+	if err != nil {
+		logErrorAndExit("Error getting values provided in the command line:", err)
+	}
+
+	return values
+}
+
+
 // Log spray messages
 func log(level int, str string, params ...interface{}) {
 	var logStr = "[spray] "
@@ -719,6 +741,22 @@ func log(level int, str string, params ...interface{}) {
 func logErrorAndExit(str string, params ...interface{}) {
 	os.Stderr.WriteString(fmt.Sprintf(str + "\n", params...))
 	os.Exit(1)
+}
+
+func getStringBetween(value string, a string, b string) string {
+	// Get substring between two strings.
+	posFirst := strings.Index(value, a)
+	if posFirst == -1 {
+		return ""
+	}
+
+	posFirstAdjusted := posFirst + len(a)
+	posLast := strings.Index(value[posFirstAdjusted:], b)
+	if posLast == -1 {
+		return ""
+	}
+	posLastAdjusted := posFirstAdjusted + posLast
+	return value[posFirstAdjusted:posLastAdjusted]
 }
 
 
