@@ -61,6 +61,8 @@ ms3:
 ```
 Several sub-charts may have the same weight, meaning that they will be upgraded together.
 Upgrade of sub-charts of weight n+1 will only be triggered when upgrade of sub-charts of weight n is completed.
+Note also that while weights should primarilly be set in the `values.yaml` file of the umbrella chart, it is also possible to set them using the `--values/-f` or `--set` flags of the command line, for example to temporarilly overwrite a weight value. If so, take care that weight values provided through the command line are not taken into account for the next calls to Helm Spray, including if the `--reuse-values` flag is used: they would have to be provided again at each call.
+
 
 Helm Spray creates one helm Release per sub-chart. Releases are individually upgraded when running the helm spray process, in particular when using the `--target` option.
 The name and version of the umbrella chart is set as the Chart name for all the Revisions.
@@ -71,14 +73,14 @@ micro-service-2 21              Wed Jan 30 17:18:55 2019        DEPLOYED        
 ms3             7               Wed Jan 30 17:18:45 2019        DEPLOYED        solution-0.1    0.1             default
 ```
 
-Note: if an alias is set for a sub-chart, then this is this alias that should be used with the `--target` optioni, not the sub-chart name.
+Note: if an alias is set for a sub-chart, then this is this alias that should be used with the `--target` option, not the sub-chart name.
 
 ### Values:
 
 The umbrella chart gathers several components or micro-services into a single solution. Values can then be set at many different places:
 - At micro-service level, inside the `values.yaml` file of each micro-service chart: these are common defaults values set by the micro-service developer, independently from the deployment context and location of the micro-service
 - At the solution level, inside the `values.yaml` file of the umbrella chart: these are values complementing or overwriting default values of the micro-services sub-charts, usually formalizing the deployment topology of the solution and giving the standard configuration of the underlying micro-services for any deployments of cwthis specific solution
-- At deployment time, using the `--values/-f` or `--set` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
+- At deployment time, using the `--values/-f`, `--set`, `--set-string`, or `--set-file` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
 
 Within the micro-services paradigm, decoupling between micro-services is one of the most important criteria to respect. While values con be provided in a per-micro-service basis for the first and last places mentioned above, Helm only allows one single `values.yaml` file in the umbrella chart. All solution-level values should then be gathered into a single file, while it would have been better to provide values in several files, on a one-file-per-micro-service basis (to ensure decoupling of the micro-services configuration, even at solution level).
 Helm Spray is consequently adding this capability to have several values file in the umbrella chart and to include them into the single `values.yaml` file using the `#! {{ .Files.Get <file name> }}` directive.
@@ -109,6 +111,38 @@ ms3:
       dummy: "just here to prevent from a warning"
 
 ```
+
+### Tags and Conditions:
+
+As Helm Spray internally uses the Helm Conditions for its own purpose, it is not possible to specify other Conditions that the ones required by Helm Spray itself (`<chart name or alias>.enabled`). Such extra Conditions will be ignored.
+
+However, Helm Spray is compatible with Tags set in the `requirements.yaml` file, as displayed in the following example:
+```
+dependencies:
+- name: micro-service-1
+  version: ~1.2
+  repository: http://chart-museum/charts
+  condition: micro-service-1.enabled
+  tags:
+  - common
+  - front-end
+- name: micro-service-2
+  version: ~2.3
+  repository: http://chart-museum/charts
+  condition: micro-service-2.enabled
+  tags:
+  - common
+  - back-end
+- name: micro-service-3
+  alias: ms3
+  version: ~1.1
+  repository: http://chart-museum/charts
+  condition: ms3.enabled
+```
+With such a configuration, if Helm Spray is called with the `--set tags.front-end=true` argument, the `micro-service-1` will be deployed (because it has a tag that matches one of those given in the command line) and `micro-service-3` as well (because it has no tag, so no restriction applies), while `micro-service-2` will not be deployed (because it has tags and none of them is matching one of those given in the command line).
+
+Note that tags shall be provided through the `--values`/`-f`, `--set`, `--set-string`, or `--set-file` flags: values coming from the server/Tiller (for example when using the `--reuse-values` flag) are not considered.
+Tags values can also not be templated (e.g. `tags.front-end` set to `{{ .Values.x.y.z }}` will not be processed).
 
 ### Flags:
 
@@ -168,10 +202,4 @@ $ SKIP_BIN_INSTALL=1 helm plugin install $GOPATH/src/github.com/gemalto/helm-spr
 
 That last command will skip fetching the binary install and use the one you
 built.
-
-
-
-
-
-
 

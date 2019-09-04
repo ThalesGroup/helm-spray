@@ -22,6 +22,7 @@ import (
 	"strings"
 	"regexp"
 	"time"
+	"reflect"
 	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
@@ -63,6 +64,8 @@ type Dependency struct {
 	Targeted					bool
 	Weight						int
 	CorrespondingReleaseName	string
+	HasTags						bool
+	AllowedByTags				bool
 }
 
 var (
@@ -86,6 +89,8 @@ nor '--set', use '--set-file' to read the single large value from file.
 
 You can specify the '--values'/'-f' flag several times or provide a single comma separated value.
 You can specify the '--set' flag several times or provide a single comma separated value.
+Helm Spray does not support Helm Conditions, but supports Helm Tags, with some restrictions.
+
 To check the generated manifests of a release without installing the chart,
 the '--debug' and '--dry-run' flags can be combined. This will still require a
 round-trip to the Tiller server.
@@ -246,7 +251,7 @@ func (p *sprayCmd) spray() error {
 		if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
 			logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
 		}
-		p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
+		p.valueFiles = append(p.valueFiles, tempFile.Name())
 
 	} else {
 		values, err = chartutil.CoalesceValues(chart, chart.GetValues())
@@ -255,7 +260,27 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
-	// Build the list of all rependencies, and their key attributes
+	// Coalesce these values with the values provided in the command line
+	providedValues := getProvidedValues(p.chartName, chart, p.valueFiles, p.valuesSet, p.valuesSetString, p.valuesSetFile)
+	values.MergeInto (providedValues)
+
+	// Get the list of "tags" specified in the values...
+	// (locally-provided values only; values coming from server are not considered)
+	var providedTags map[string]interface{}
+	tags, err := values.Table("tags")
+	if err == nil {
+		providedTags = tags.AsMap()
+	}
+
+	if p.verbose {
+		log(1, "looking for \"tags\" in values provided through \"--values/-f\", \"--set\", \"--set-string\", and \"--set-file\"...")
+		for k, v := range providedTags {
+			log(2, fmt.Sprintf("found tag \"%s: %s\"", k, fmt.Sprint(v)))
+		}
+	}
+
+
+	// Build the list of all dependencies, and their key attributes
 	dependencies := make([]Dependency, len(reqs.Dependencies))
 	for i, req := range reqs.Dependencies {
 		// Dependency name and alias
@@ -289,17 +314,39 @@ func (p *sprayCmd) spray() error {
 			dependencies[i].Targeted = true
 		}
 
+		// Loop on the tags associated to the dependency and check with the tags provided in the values
+		dependencies[i].AllowedByTags = false
+		if len (req.Tags) == 0 {
+			dependencies[i].HasTags = false
+			dependencies[i].AllowedByTags = true
+
+		} else {
+			dependencies[i].HasTags = true
+
+			for _, tag := range req.Tags {
+				for k, v := range providedTags {
+					if k == tag && v == true {
+						dependencies[i].AllowedByTags = true
+					}
+				}
+			}
+		}
+
 		// Get weight of the dependency. If no weight is specified, setting it to 0
 		dependencies[i].Weight = 0
-		depi, err := values.Table(dependencies[i].UsedName)
-		if (err == nil && depi["weight"] != nil) {
-			w64 := depi["weight"].(float64)
-			w, err := strconv.Atoi(strconv.FormatFloat(w64, 'f', 0, 64))
-			if err != nil {
-				logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
-			}
-			dependencies[i].Weight = w
+		wf, err := values.PathValue(dependencies[i].UsedName + ".weight")
+		if err != nil {
+			logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
 		}
+
+		if reflect.TypeOf(wf).String() != "float64" { // Value retrieved from the map is a float (even if it expressed as an int). We will convert it after
+			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
+		}
+		wi := int(wf.(float64))
+		if wi < 0 {
+			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be positive or equal to zero", dependencies[i].UsedName)
+		}
+		dependencies[i].Weight = wi
 
 		// Compute the corresponding release name
 		if p.prefixReleasesWithNamespace == true {
@@ -344,14 +391,23 @@ func (p *sprayCmd) spray() error {
 				currentStatus = release.Status
 			}
 
-			if dependency.Alias == "" {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Name, "-", dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
-
-			} else {
-				fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %t\t %d\t| %s\t %s\t %s\t", dependency.Alias, dependency.Name, dependency.Targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+			name := dependency.Name
+			alias := "-"
+			if dependency.Alias != "" {
+				name = dependency.Alias
+				alias = dependency.Name
 			}
+
+			targeted := fmt.Sprint (dependency.Targeted)
+			if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == true) {
+				targeted = "true (tag match)"
+			} else if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == false) {
+				targeted = "false (no tag match)"
+			}
+
+			fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 		}
-w.Flush()
+		w.Flush()
 	}
 
 	// Loop on the increasing weight
@@ -362,7 +418,7 @@ w.Flush()
 
 		// Upgrade the targeted Deployments corresponding the the current weight
 		for _, dependency := range dependencies {
-			if dependency.Targeted {
+			if dependency.Targeted  && dependency.AllowedByTags == true {
 				if dependency.Weight == i {
 					if firstInWeight {
 						log(1, "processing sub-charts of weight %d", dependency.Weight)
@@ -634,6 +690,37 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 	return defaultValues
 }
 
+
+// Get the values provided in the command line (i.e. using the --values/-f, --set, --set-string, and --set-file flags as a chartutil.Values object
+func getProvidedValues(chartName string, chart *chartHapi.Chart, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) chartutil.Values {
+	reqs, _ := chartutil.LoadRequirements(chart)
+
+	// Use the Helm template command to get the values provided in the command line
+	allDisabled := ""
+	for _, req := range reqs.Dependencies {
+		if req.Alias == "" {
+			allDisabled = allDisabled + req.Name + ".enabled=false,"
+		} else {
+			allDisabled = allDisabled + req.Alias + ".enabled=false,"
+		}
+	}
+	newValuesSet := append(valuesSet, allDisabled)
+	templateOutput := helm.Template(chartName, "", valueFiles, newValuesSet, valuesSetString, valuesSetFile)
+
+	// Extract from this output the list of values as a Yaml string
+	valuesYaml := getStringBetween(string(templateOutput), "USER-SUPPLIED VALUES:", "COMPUTED VALUES:")
+//	valuesYaml := getStringBetween(string(templateOutput), "COMPUTED VALUES:", "HOOKS:")
+
+	// Transform it into a Values object
+	values, err := chartutil.ReadValues([]byte(valuesYaml))
+	if err != nil {
+		logErrorAndExit("Error getting values provided in the command line:", err)
+	}
+
+	return values
+}
+
+
 // Log spray messages
 func log(level int, str string, params ...interface{}) {
 	var logStr = "[spray] "
@@ -655,6 +742,22 @@ func log(level int, str string, params ...interface{}) {
 func logErrorAndExit(str string, params ...interface{}) {
 	os.Stderr.WriteString(fmt.Sprintf(str + "\n", params...))
 	os.Exit(1)
+}
+
+func getStringBetween(value string, a string, b string) string {
+	// Get substring between two strings.
+	posFirst := strings.Index(value, a)
+	if posFirst == -1 {
+		return ""
+	}
+
+	posFirstAdjusted := posFirst + len(a)
+	posLast := strings.Index(value[posFirstAdjusted:], b)
+	if posLast == -1 {
+		return ""
+	}
+	posLastAdjusted := posFirstAdjusted + posLast
+	return value[posFirstAdjusted:posLastAdjusted]
 }
 
 

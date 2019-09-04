@@ -306,6 +306,50 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	return helmstatus
 }
 
+// Template ...
+func Template(chartPath string, fileToExecute string, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) string {
+	// Prepare parameters...
+	var myargs []string = []string{"template", chartPath, "--debug"}
+
+	if fileToExecute != "" {
+		myargs = append(myargs, "--execute")
+		myargs = append(myargs, fileToExecute)
+	}
+
+	for _, v := range valuesSet {
+		myargs = append(myargs, "--set")
+		myargs = append(myargs, v)
+	}
+	for _, v := range valuesSetString {
+		myargs = append(myargs, "--set-string")
+		myargs = append(myargs, v)
+	}
+	for _, v := range valuesSetFile {
+		myargs = append(myargs, "--set-file")
+		myargs = append(myargs, v)
+	}
+	for _, v := range valueFiles {
+		myargs = append(myargs, "-f")
+		myargs = append(myargs, v)
+	}
+
+	// Run the template command
+	cmd := exec.Command("helm", myargs...)
+
+	cmdOutput := &bytes.Buffer{}
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = cmdOutput
+	err := cmd.Run()
+	output := cmdOutput.Bytes()
+
+	if err != nil {
+		printError(err)
+		os.Exit(1)
+	}
+
+	return string(output)
+}
+
 // Status ...
 func Status(chart string) HelmStatus {
 	cmd := exec.Command("helm", "status", chart)
