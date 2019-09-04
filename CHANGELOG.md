@@ -1,5 +1,9 @@
 # Release Notes
 
+## Version 3.4.4 - 09/04/2019
+* Support other Deployment/StatefulSet versions for the 'waiting for' phase [`#30`](https://github.com/gemalto/helm-spray/pull/30) (Patrice Amiel) 
+* Support of Helm Tags [`#35`](https://github.com/gemalto/helm-spray/pull/35) (Patrice Amiel) 
+
 ## Version 3.4.3 - 07/15/2019
 * Support of new flags (--exclude, --set-file, --set-string) + bugfix #! .File.Get clause [`#28`](https://github.com/gemalto/helm-spray/pull/28) (Patrice Amiel) 
 
