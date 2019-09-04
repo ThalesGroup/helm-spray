@@ -115,7 +115,9 @@ func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	helmstatus.Resources = getStringAfter (out_str, "RESOURCES:")
 
 	// ... and get the Deployments from the resources
-	var res = getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/Deployment", "==>")
+	var res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Deployment", "==>") + "\n" + 
+				getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/Deployment", "==>") + "\n" + 
+				getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/Deployment", "==>")
 	var res_as_slice = make([]string, 0)
 	var scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
@@ -129,7 +131,10 @@ func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	}
 
 	// ... and get the StatefulSets from the resources
-	res = getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/StatefulSet", "==>")
+	res = getStringBetween (helmstatus.Resources + "==>", "==> v1/StatefulSet", "==>") + "\n" + 
+			getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/StatefulSet", "==>") + "\n" + 
+			getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/StatefulSet", "==>")
+
 	res_as_slice = make([]string, 0)
 	scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
