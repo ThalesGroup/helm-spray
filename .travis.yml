@@ -3,7 +3,7 @@ language: go
 go:
 - 1.11.x
 
-go_import_path: github.com/pamiel/helm-spray
+go_import_path: github.com/gemalto/helm-spray
 
 install:
 
