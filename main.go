@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"time"
 	"reflect"
+	"encoding/json"
 	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
@@ -251,7 +252,7 @@ func (p *sprayCmd) spray() error {
 		if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
 			logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
 		}
-		p.valueFiles = append(p.valueFiles, tempFile.Name())
+		p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
 
 	} else {
 		values, err = chartutil.CoalesceValues(chart, chart.GetValues())
@@ -334,19 +335,31 @@ func (p *sprayCmd) spray() error {
 
 		// Get weight of the dependency. If no weight is specified, setting it to 0
 		dependencies[i].Weight = 0
-		wf, err := values.PathValue(dependencies[i].UsedName + ".weight")
+		weightJson, err := values.PathValue(dependencies[i].UsedName + ".weight")
 		if err != nil {
 			logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
 		}
 
-		if reflect.TypeOf(wf).String() != "float64" { // Value retrieved from the map is a float (even if it expressed as an int). We will convert it after
+		weightInteger := 0
+		// Depending on the configuration of the json parser, integer can be returned either as Float64 or json.Number
+		if reflect.TypeOf(weightJson).String() == "json.Number" {
+			w, err := weightJson.(json.Number).Int64()
+			if err != nil {
+				logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
+			}
+			weightInteger = int(w)
+
+		} else if reflect.TypeOf(weightJson).String() == "float64" {
+			weightInteger = int(weightJson.(float64))
+
+		} else {
 			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
 		}
-		wi := int(wf.(float64))
-		if wi < 0 {
+
+		if weightInteger < 0 {
 			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be positive or equal to zero", dependencies[i].UsedName)
 		}
-		dependencies[i].Weight = wi
+		dependencies[i].Weight = weightInteger
 
 		// Compute the corresponding release name
 		if p.prefixReleasesWithNamespace == true {
@@ -584,7 +597,7 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 
 	regularExpressions := []string {
 		// Expression #0: Process file inclusion ".Files.Get" with optional "| indent"
-        // Note: for backward compatibility, ".File.Get" is also allowed
+		// Note: for backward compatibility, ".File.Get" is also allowed
 		`#!\s*\{\{\s*pick\s*\(\s*\.Files?\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`,
 		// Expression #1: Process file inclusion ".Files.Get", picking a specific element of the file content "pick (.Files.Get <file>) <tag>", with an optional "| indent"
 		`#!\s*\{\{\s*\.Files?\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`}
