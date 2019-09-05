@@ -339,6 +339,7 @@ func (p *sprayCmd) spray() error {
 			logErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
 		}
 
+fmt.Println("Type", reflect.TypeOf(wf).String() )
 		if reflect.TypeOf(wf).String() != "float64" { // Value retrieved from the map is a float (even if it expressed as an int). We will convert it after
 			logErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
 		}
