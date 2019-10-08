@@ -423,6 +423,36 @@ func (p *sprayCmd) spray() error {
 		w.Flush()
 	}
 
+	// Check that the provided target(s) or explude(s) correponds to valid sub-chart names or alias
+	if len(p.targets) > 0 {
+		for i := range p.targets {
+			found := false
+			for _, dependency := range dependencies {
+				if p.targets[i] == dependency.UsedName {
+					found = true
+					break
+				}	
+			}
+			if !found {
+				logErrorAndExit("\"%s\" is not a valid sub-chart name/alias", p.targets[i])
+			}
+		}
+
+	} else if len(p.excludes) > 0 {
+		for i := range p.excludes {
+			found := false
+			for _, dependency := range dependencies {
+				if p.excludes[i] == dependency.UsedName {
+					found = true
+					break
+				}	
+			}
+			if !found {
+				logErrorAndExit("\"%s\" is not a valid sub-chart name/alias", p.excludes[i])
+			}
+		}
+	}
+
 	// Loop on the increasing weight
 	for i := 0; i <= getMaxWeight(dependencies); i++ {
 		shouldWait := false
@@ -602,100 +632,95 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 		// Expression #1: Process file inclusion ".Files.Get", picking a specific element of the file content "pick (.Files.Get <file>) <tag>", with an optional "| indent"
 		`#!\s*\{\{\s*\.Files?\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`}
 
-	expressionNumber := 1
-	includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber-1])
-	match := includeFileNameExp.FindStringSubmatch(defaultValues)
-
 	if verbose {
 		log(1, "looking for \"#! .Files.Get\" clauses into the values file of the umbrella chart...")
 	}
 
-	for ; len(match) != 0; {
-		var fullMatch, includeFileName, subValuePath, indent string
-		if expressionNumber == 1 {
-			fullMatch = match[0]
-			includeFileName = strings.Trim (match[1], `"`)
-			subValuePath = strings.Trim (match[2], `"`)
-			indent = match[4]
-		} else if expressionNumber == 2 {
-			fullMatch = match[0]
-			includeFileName = strings.Trim (match[1], `"`)
-			subValuePath = ""
-			indent = match[3]
-		}
+	for expressionNumber := 0; expressionNumber < len(regularExpressions); expressionNumber++ {
+		includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber])
+		match := includeFileNameExp.FindStringSubmatch(defaultValues)
 
-		replaced := false
+		for ; len(match) != 0; {
+			var fullMatch, includeFileName, subValuePath, indent string
+			if expressionNumber == 0 {
+				fullMatch = match[0]
+				includeFileName = strings.Trim (match[1], `"`)
+				subValuePath = strings.Trim (match[2], `"`)
+				indent = match[4]
+			} else if expressionNumber == 1 {
+				fullMatch = match[0]
+				includeFileName = strings.Trim (match[1], `"`)
+				subValuePath = ""
+				indent = match[3]
+			}
 
-		for _, f := range chart.GetFiles() {
-			if f.GetTypeUrl() == strings.Trim(strings.TrimSpace(includeFileName), "\"") {
-				if verbose {
-					if subValuePath == "" {
-						if indent == "" {
-							log(2, "found reference to values file \"%s\"", includeFileName)
+			replaced := false
+
+			for _, f := range chart.GetFiles() {
+				if f.GetTypeUrl() == strings.Trim(strings.TrimSpace(includeFileName), "\"") {
+					if verbose {
+						if subValuePath == "" {
+							if indent == "" {
+								log(2, "found reference to values file \"%s\"", includeFileName)
+							} else {
+								log(2, "found reference to values file \"%s\" (with indent of \"%s\")", includeFileName, indent)
+							}
 						} else {
-							log(2, "found reference to values file \"%s\" (with indent of \"%s\")", includeFileName, indent)
-						}
-					} else {
-						if indent == "" {
-							log(2, "found reference to values file \"%s\" (with yaml sub-path \"%s\")", includeFileName, subValuePath)
-						} else {
-							log(2, "found reference to values file \"%s\" (with yaml sub-path \"%s\" and indent of \"%s\")", includeFileName, subValuePath, indent)
+							if indent == "" {
+								log(2, "found reference to values file \"%s\" (with yaml sub-path \"%s\")", includeFileName, subValuePath)
+							} else {
+								log(2, "found reference to values file \"%s\" (with yaml sub-path \"%s\" and indent of \"%s\")", includeFileName, subValuePath, indent)
+							}
 						}
 					}
-				}
 
-				dataToAdd := string(f.GetValue())
-				if subValuePath != "" {
-					data, err := chartutil.ReadValues(f.GetValue())
-					if err != nil {
-						logErrorAndExit("Unable to read values from file \"%s\": %s", includeFileName, err)
-					}
-
-					// Suppose that the element at the path is an element (list items are not supported)
-					if subData, err := data.Table(subValuePath); err == nil {
-						if dataToAdd, err = subData.YAML(); err != nil {
-							logErrorAndExit("Unable to generate a valid YAML file from values at path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+					dataToAdd := string(f.GetValue())
+					if subValuePath != "" {
+						data, err := chartutil.ReadValues(f.GetValue())
+						if err != nil {
+							logErrorAndExit("Unable to read values from file \"%s\": %s", includeFileName, err)
 						}
 
-					// If it is not an element, then maybe it is directly a value
-					} else {
-						if val, err2 := data.PathValue(subValuePath); err2 == nil {
-							var ok bool
-							if dataToAdd, ok = val.(string); ok == false {
-								logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s\n%s", subValuePath, includeFileName, err, "Targeted item is most propably a list: not supported. Only elements (aka Yaml table) and leaf values are supported.")
+						// Suppose that the element at the path is an element (list items are not supported)
+						if subData, err := data.Table(subValuePath); err == nil {
+							if dataToAdd, err = subData.YAML(); err != nil {
+								logErrorAndExit("Unable to generate a valid YAML file from values at path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
 							}
 
+						// If it is not an element, then maybe it is directly a value
 						} else {
-							logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+							if val, err2 := data.PathValue(subValuePath); err2 == nil {
+								var ok bool
+								if dataToAdd, ok = val.(string); ok == false {
+									logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s\n%s", subValuePath, includeFileName, err, "Targeted item is most propably a list: not supported. Only elements (aka Yaml table) and leaf values are supported.")
+								}
+
+							} else {
+								logErrorAndExit("Unable to find values matching path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
+							}
 						}
 					}
-				}
 
-				if indent == "" {
-					defaultValues = strings.Replace(defaultValues, fullMatch, dataToAdd + "\n", -1)
-				} else {
-					nbrOfSpaces, err := strconv.Atoi(indent)
-					if err != nil {
-						logErrorAndExit("Error computing indentation value in \"#! .Files.Get\" clause: %s", err)
+					if indent == "" {
+						defaultValues = strings.Replace(defaultValues, fullMatch, dataToAdd + "\n", -1)
+					} else {
+						nbrOfSpaces, err := strconv.Atoi(indent)
+						if err != nil {
+							logErrorAndExit("Error computing indentation value in \"#! .Files.Get\" clause: %s", err)
+						}
+
+						toAdd := strings.Replace(dataToAdd, "\n", "\n" + strings.Repeat (" ", nbrOfSpaces), -1)
+						defaultValues = strings.Replace(defaultValues, fullMatch, strings.Repeat (" ", nbrOfSpaces) + toAdd + "\n", -1)
 					}
 
-					toAdd := strings.Replace(dataToAdd, "\n", "\n" + strings.Repeat (" ", nbrOfSpaces), -1)
-					defaultValues = strings.Replace(defaultValues, fullMatch, strings.Repeat (" ", nbrOfSpaces) + toAdd + "\n", -1)
+					replaced = true
 				}
-
-				replaced = true
 			}
-		}
 
-		if !replaced {
-			logErrorAndExit("Unable to find file \"%s\" referenced in the \"%s\" clause of the default values file of the umbrella chart", match[1], strings.TrimRight(match[0], "\n"))
-		}
+			if !replaced {
+				logErrorAndExit("Unable to find file \"%s\" referenced in the \"%s\" clause of the default values file of the umbrella chart", match[1], strings.TrimRight(match[0], "\n"))
+			}
 
-		match = includeFileNameExp.FindStringSubmatch(defaultValues)
-
-		if len(match) == 0 && expressionNumber < len(regularExpressions) {
-			expressionNumber++
-			includeFileNameExp = regexp.MustCompile(regularExpressions[expressionNumber-1])
 			match = includeFileNameExp.FindStringSubmatch(defaultValues)
 		}
 	}

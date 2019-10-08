@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"regexp"
 	"encoding/json"
 )
@@ -374,14 +375,31 @@ func Fetch(chart string, version string) string {
 	defer os.RemoveAll(tempDir)
 
 	var command string
-	if version != "" {
-		command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
-	} else {
-		command = "helm fetch " + chart + " --destination " + tempDir
-	}
-	command = command + " && ls " + tempDir + " && cp " + tempDir + "/* ."
+	var cmd *exec.Cmd
+	var endOfLine string
+	if runtime.GOOS == "windows" {
+		if version != "" {
+			command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
+		} else {
+			command = "helm fetch " + chart + " --destination " + tempDir
+		}
+		command = command + " && dir /b " + tempDir + " && copy " + tempDir + "\\* ."
 
-	cmd := exec.Command("sh", "-c", command)
+		cmd = exec.Command("cmd", "/C", command)
+		endOfLine = "\r\n"
+
+	} else {
+		if version != "" {
+			command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
+		} else {
+			command = "helm fetch " + chart + " --destination " + tempDir
+		}
+		command = command + " && ls " + tempDir + " && cp " + tempDir + "/* ."
+
+		cmd = exec.Command("sh", "-c", command)
+		endOfLine = "\n"
+	}
+
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	cmd.Stderr = os.Stderr
@@ -392,7 +410,7 @@ func Fetch(chart string, version string) string {
 
 	output := cmdOutput.Bytes()
 	var output_str = string(output)
-	var result = strings.Trim (output_str, "\n")
-	return string(result)
+	var result = strings.Split (output_str, endOfLine)
+	return result[0]
 }
 
