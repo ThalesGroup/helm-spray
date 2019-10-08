@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 3.4.5 - 10/08/2019
+* Bugfix issues #39, #40 and #41 [`#42`](https://github.com/gemalto/helm-spray/pull/42) (Patrice Amiel)
+
 ## Version 3.4.4 - 09/04/2019
 * Support other Deployment/StatefulSet versions for the 'waiting for' phase [`#30`](https://github.com/gemalto/helm-spray/pull/30) (Patrice Amiel) 
 * Support of Helm Tags [`#35`](https://github.com/gemalto/helm-spray/pull/35) (Patrice Amiel) 
