@@ -13,18 +13,18 @@ limitations under the License.
 package main
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"reflect"
-	"regexp"
+	"bufio"
+	"io/ioutil"
 	"strconv"
 	"strings"
-	"text/tabwriter"
+	"regexp"
 	"time"
+	"reflect"
+	"encoding/json"
+	"text/tabwriter"
 
 	"github.com/gemalto/helm-spray/pkg/helm"
 	"github.com/gemalto/helm-spray/pkg/kubectl"
@@ -36,37 +36,37 @@ import (
 )
 
 type sprayCmd struct {
-	chartName                   string
-	chartVersion                string
-	targets                     []string
-	excludes                    []string
-	namespace                   string
-	prefixReleases              string
-	prefixReleasesWithNamespace bool
-	resetValues                 bool
-	reuseValues                 bool
-	valueFiles                  []string
-	valuesSet                   []string
-	valuesSetString             []string
-	valuesSetFile               []string
-	force                       bool
-	timeout                     int
-	dryRun                      bool
-	verbose                     bool
-	debug                       bool
+	chartName						string
+	chartVersion					string
+	targets							[]string
+	excludes						[]string
+	namespace						string
+	prefixReleases					string
+	prefixReleasesWithNamespace		bool
+	resetValues						bool
+	reuseValues						bool
+	valueFiles						[]string
+	valuesSet						[]string
+	valuesSetString					[]string
+	valuesSetFile					[]string
+	force							bool
+	timeout		 					int
+	dryRun							bool
+	verbose							bool
+	debug							bool
 }
 
 // Dependency ...
 type Dependency struct {
-	Name                     string
-	Alias                    string
-	UsedName                 string
-	AppVersion               string
-	Targeted                 bool
-	Weight                   int
-	CorrespondingReleaseName string
-	HasTags                  bool
-	AllowedByTags            bool
+	Name						string
+	Alias						string
+	UsedName					string
+	AppVersion					string
+	Targeted					bool
+	Weight						int
+	CorrespondingReleaseName	string
+	HasTags						bool
+	AllowedByTags				bool
 }
 
 var (
@@ -113,17 +113,15 @@ charts in a repository, use 'helm search'.
 `
 )
 
-var version = "SNAPSHOT"
-
 func newSprayCmd(args []string) *cobra.Command {
 
 	p := &sprayCmd{}
 
 	cmd := &cobra.Command{
-		Use:          "helm spray [CHART]",
-		Short:        fmt.Sprintf("upgrade subcharts from an umbrella chart (helm-spray %s)", version),
-		Long:         globalUsage,
-		SilenceUsage: true,
+		Use:			"helm spray [CHART]",
+		Short:			`Helm plugin to upgrade subcharts from an umbrella chart`,
+		Long:			globalUsage,
+		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 
 			if len(args) == 0 {
@@ -143,7 +141,7 @@ func newSprayCmd(args []string) *cobra.Command {
 					logErrorAndExit("You cannot use --version together with chart directory")
 				}
 
-				if strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://") {
+				if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
 					logErrorAndExit("You cannot use --version together with chart URL")
 				}
 			}
@@ -157,11 +155,11 @@ func newSprayCmd(args []string) *cobra.Command {
 			}
 
 			// If chart is specified through an url, the fetch it from the url.
-			if strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://") {
+			if (strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://")) {
 				log(1, "fetching chart from url \"%s\"...", p.chartName)
 				p.chartName = helm.Fetch(p.chartName, "")
 
-				// If local file (or directory) does not exist, then fetch it from a repo.
+			// If local file (or directory) does not exist, then fetch it from a repo.
 			} else if _, err := os.Stat(p.chartName); err != nil {
 				if p.chartVersion != "" {
 					log(1, "fetching chart \"%s\" version \"%s\" from repos...", p.chartName, p.chartVersion)
@@ -234,10 +232,13 @@ func (p *sprayCmd) spray() error {
 		// Load default values...
 		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
 		if err != nil {
-			logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+			if p.verbose {
+				logWithNumberedLines(1, updatedDefaultValues)
+				logErrorAndExit("Error processing default values for umbrella chart: %s", err)
+			}
 		}
 
-		// Write default values to a temporary file and add it to the list of values files,
+		// Write default values to a temporary file and add it to the list of values files, 
 		// for later usage during the calls to helm
 		tempDir, err := ioutil.TempDir("", "spray-")
 		if err != nil {
@@ -265,7 +266,7 @@ func (p *sprayCmd) spray() error {
 
 	// Coalesce these values with the values provided in the command line
 	providedValues := getProvidedValues(p.chartName, chart, p.valueFiles, p.valuesSet, p.valuesSetString, p.valuesSetFile)
-	values.MergeInto(providedValues)
+	values.MergeInto (providedValues)
 
 	// Get the list of "tags" specified in the values...
 	// (locally-provided values only; values coming from server are not considered)
@@ -282,6 +283,7 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
+
 	// Build the list of all dependencies, and their key attributes
 	dependencies := make([]Dependency, len(reqs.Dependencies))
 	for i, req := range reqs.Dependencies {
@@ -294,7 +296,7 @@ func (p *sprayCmd) spray() error {
 			dependencies[i].UsedName = dependencies[i].Alias
 		}
 
-		// Is dependency targeted? If --target or --excludes are specificed, it should match the name of the current dependency;
+		// Is dependency targeted? If --target or --excludes are specificed, it should match the name of the current dependency; 
 		// if neither --target nor --exclude are specified, then all dependencies are targeted
 		if len(p.targets) > 0 {
 			dependencies[i].Targeted = false
@@ -318,7 +320,7 @@ func (p *sprayCmd) spray() error {
 
 		// Loop on the tags associated to the dependency and check with the tags provided in the values
 		dependencies[i].AllowedByTags = false
-		if len(req.Tags) == 0 {
+		if len (req.Tags) == 0 {
 			dependencies[i].HasTags = false
 			dependencies[i].AllowedByTags = true
 
@@ -380,6 +382,7 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
+
 	// Starting the processing...
 	if p.prefixReleasesWithNamespace == true {
 		log(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases prefix \"%s-\"", p.chartName, p.namespace, p.namespace)
@@ -411,14 +414,14 @@ func (p *sprayCmd) spray() error {
 				alias = dependency.Name
 			}
 
-			targeted := fmt.Sprint(dependency.Targeted)
+			targeted := fmt.Sprint (dependency.Targeted)
 			if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == true) {
 				targeted = "true (tag match)"
 			} else if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == false) {
 				targeted = "false (no tag match)"
 			}
 
-			fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+			fmt.Fprintln(w, fmt.Sprintf ("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 		}
 		w.Flush()
 	}
@@ -431,7 +434,7 @@ func (p *sprayCmd) spray() error {
 				if p.targets[i] == dependency.UsedName {
 					found = true
 					break
-				}
+				}	
 			}
 			if !found {
 				logErrorAndExit("\"%s\" is not a valid sub-chart name/alias", p.targets[i])
@@ -445,7 +448,7 @@ func (p *sprayCmd) spray() error {
 				if p.excludes[i] == dependency.UsedName {
 					found = true
 					break
-				}
+				}	
 			}
 			if !found {
 				logErrorAndExit("\"%s\" is not a valid sub-chart name/alias", p.excludes[i])
@@ -461,7 +464,7 @@ func (p *sprayCmd) spray() error {
 
 		// Upgrade the targeted Deployments corresponding the the current weight
 		for _, dependency := range dependencies {
-			if dependency.Targeted && dependency.AllowedByTags == true {
+			if dependency.Targeted  && dependency.AllowedByTags == true {
 				if dependency.Weight == i {
 					if firstInWeight {
 						log(1, "processing sub-charts of weight %d", dependency.Weight)
@@ -501,7 +504,7 @@ func (p *sprayCmd) spray() error {
 						log(3, "helm resources:")
 						var scanner = bufio.NewScanner(strings.NewReader(helmstatus.Resources))
 						for scanner.Scan() {
-							if len(scanner.Text()) > 0 {
+							if len (scanner.Text()) > 0 {
 								log(4, scanner.Text())
 							}
 						}
@@ -625,7 +628,7 @@ func getMaxWeight(v []Dependency) (m int) {
 func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 	defaultValues := string(chart.GetValues().GetRaw())
 
-	regularExpressions := []string{
+	regularExpressions := []string {
 		// Expression #0: Process file inclusion ".Files.Get" with optional "| indent"
 		// Note: for backward compatibility, ".File.Get" is also allowed
 		`#!\s*\{\{\s*pick\s*\(\s*\.Files?\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*\)\s*([a-zA-Z0-9_"\.\-]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`,
@@ -640,16 +643,16 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 		includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber])
 		match := includeFileNameExp.FindStringSubmatch(defaultValues)
 
-		for len(match) != 0 {
+		for ; len(match) != 0; {
 			var fullMatch, includeFileName, subValuePath, indent string
 			if expressionNumber == 0 {
 				fullMatch = match[0]
-				includeFileName = strings.Trim(match[1], `"`)
-				subValuePath = strings.Trim(match[2], `"`)
+				includeFileName = strings.Trim (match[1], `"`)
+				subValuePath = strings.Trim (match[2], `"`)
 				indent = match[4]
 			} else if expressionNumber == 1 {
 				fullMatch = match[0]
-				includeFileName = strings.Trim(match[1], `"`)
+				includeFileName = strings.Trim (match[1], `"`)
 				subValuePath = ""
 				indent = match[3]
 			}
@@ -687,7 +690,7 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 								logErrorAndExit("Unable to generate a valid YAML file from values at path \"%s\" in values file \"%s\": %s", subValuePath, includeFileName, err)
 							}
 
-							// If it is not an element, then maybe it is directly a value
+						// If it is not an element, then maybe it is directly a value
 						} else {
 							if val, err2 := data.PathValue(subValuePath); err2 == nil {
 								var ok bool
@@ -702,15 +705,15 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 					}
 
 					if indent == "" {
-						defaultValues = strings.Replace(defaultValues, fullMatch, dataToAdd+"\n", -1)
+						defaultValues = strings.Replace(defaultValues, fullMatch, dataToAdd + "\n", -1)
 					} else {
 						nbrOfSpaces, err := strconv.Atoi(indent)
 						if err != nil {
 							logErrorAndExit("Error computing indentation value in \"#! .Files.Get\" clause: %s", err)
 						}
 
-						toAdd := strings.Replace(dataToAdd, "\n", "\n"+strings.Repeat(" ", nbrOfSpaces), -1)
-						defaultValues = strings.Replace(defaultValues, fullMatch, strings.Repeat(" ", nbrOfSpaces)+toAdd+"\n", -1)
+						toAdd := strings.Replace(dataToAdd, "\n", "\n" + strings.Repeat (" ", nbrOfSpaces), -1)
+						defaultValues = strings.Replace(defaultValues, fullMatch, strings.Repeat (" ", nbrOfSpaces) + toAdd + "\n", -1)
 					}
 
 					replaced = true
@@ -727,6 +730,7 @@ func processIncludeInValuesFile(chart *chartHapi.Chart, verbose bool) string {
 
 	return defaultValues
 }
+
 
 // Get the values provided in the command line (i.e. using the --values/-f, --set, --set-string, and --set-file flags as a chartutil.Values object
 func getProvidedValues(chartName string, chart *chartHapi.Chart, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) chartutil.Values {
@@ -746,7 +750,7 @@ func getProvidedValues(chartName string, chart *chartHapi.Chart, valueFiles []st
 
 	// Extract from this output the list of values as a Yaml string
 	valuesYaml := getStringBetween(string(templateOutput), "USER-SUPPLIED VALUES:", "COMPUTED VALUES:")
-	//	valuesYaml := getStringBetween(string(templateOutput), "COMPUTED VALUES:", "HOOKS:")
+//	valuesYaml := getStringBetween(string(templateOutput), "COMPUTED VALUES:", "HOOKS:")
 
 	// Transform it into a Values object
 	values, err := chartutil.ReadValues([]byte(valuesYaml))
@@ -756,6 +760,7 @@ func getProvidedValues(chartName string, chart *chartHapi.Chart, valueFiles []st
 
 	return values
 }
+
 
 // Log spray messages
 func log(level int, str string, params ...interface{}) {
@@ -771,12 +776,45 @@ func log(level int, str string, params ...interface{}) {
 		logStr = logStr + "        . "
 	}
 
-	fmt.Println(logStr + fmt.Sprintf(str, params...))
+	if len(params) != 0 {
+		fmt.Println(logStr + fmt.Sprintf(str, params...))
+	} else {
+		fmt.Println(logStr + str)
+	}
+}
+
+func logWithNumberedLines(level int, str string, params ...interface{}) {
+	// Number of lines to be printed
+	numberOfLines := strings.Count(str, "\n")
+    if len(str) > 0 && !strings.HasSuffix(str, "\n") {
+        numberOfLines++
+    }
+
+	// Compute the number of digits corresponding to this number of lines, so that the format of eachline is correct
+	numberOfDigits := 0
+	for numberOfLines != 0 {
+		numberOfLines /= 10
+		numberOfDigits = numberOfDigits + 1
+	}
+	format := "[%" + strconv.Itoa(numberOfDigits) + "d] %s"
+
+	// Print line by line
+	lineNbr := 0
+	scanner := bufio.NewScanner(strings.NewReader(str))
+	for scanner.Scan() {
+		log(level, fmt.Sprintf(format, lineNbr, scanner.Text()), params...)
+		lineNbr++
+	}
 }
 
 // Log error and exit
 func logErrorAndExit(str string, params ...interface{}) {
-	os.Stderr.WriteString(fmt.Sprintf(str+"\n", params...))
+	if len(params) != 0 {
+		os.Stderr.WriteString(fmt.Sprintf(str + "\n", params...))
+	} else {
+		os.Stderr.WriteString(str + "\n")
+	}
+
 	os.Exit(1)
 }
 
@@ -795,6 +833,7 @@ func getStringBetween(value string, a string, b string) string {
 	posLastAdjusted := posFirstAdjusted + posLast
 	return value[posFirstAdjusted:posLastAdjusted]
 }
+
 
 func main() {
 	cmd := newSprayCmd(os.Args[1:])
