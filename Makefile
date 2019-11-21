@@ -1,4 +1,4 @@
-VERSION := "3.4.5"
+VERSION := $(shell sed -n -e 's/version:[ "]*\([^"]*\).*/\1/p' plugin.yaml)
 DIST := $(CURDIR)/_dist
 LDFLAGS := "-X main.version=${VERSION}"
 TAR_LINUX := "helm-spray-linux-amd64.tar.gz"
@@ -14,12 +14,11 @@ dist_linux:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=amd64 go get -t -v ./...
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY_LINUX) -ldflags $(LDFLAGS) main.go
-	sed -e "s/:VERSION:/$(VERSION)/g" -e "s/:BINARY:/$(BINARY_LINUX)/g" plugin.yaml.template > plugin.yaml
 	tar -czvf $(DIST)/$(TAR_LINUX) $(BINARY_LINUX) README.md LICENSE plugin.yaml
 
 .PHONY: dist_windows
 dist_windows:
+	mkdir -p $(DIST)
 	GOOS=windows GOARCH=amd64 go get -t -v ./...
 	GOOS=windows GOARCH=amd64 go build -o $(BINARY_WINDOWS) -ldflags $(LDFLAGS) main.go
-	sed -e "s/:VERSION:/$(VERSION)/g" -e "s/:BINARY:/$(BINARY_WINDOWS)/g" plugin.yaml.template > plugin.yaml
 	tar -czvf $(DIST)/${TAR_WINDOWS} $(BINARY_WINDOWS) README.md LICENSE plugin.yaml
