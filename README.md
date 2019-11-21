@@ -172,14 +172,6 @@ Tags values can also not be templated (e.g. `tags.front-end` set to `{{ .Values.
       --version string                   specify the exact chart version to install. If this is not specified, the latest version is installed
 ```
 
-## Install
-
-```
-  $ helm plugin install https://github.com/gemalto/helm-spray
-```
-
-The above will fetch the latest binary release of `helm spray` and install it.
-
 ## Developer (From Source) Install
 
 If you would like to handle the build yourself, instead of fetching a binary,
