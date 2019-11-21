@@ -196,10 +196,8 @@ for that.
 
 ```
 $ cd $GOPATH/src/github.com/gemalto/helm-spray
-$ make bootstrap build
-$ SKIP_BIN_INSTALL=1 helm plugin install $GOPATH/src/github.com/gemalto/helm-spray
+$ make dist_linux
+$ helm plugin install .
 ```
 
-That last command will skip fetching the binary install and use the one you
-built.
 
