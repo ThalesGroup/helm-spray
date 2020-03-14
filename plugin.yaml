@@ -4,7 +4,7 @@ usage: "upgrade sub-charts from an umbrella chart with dependency orders"
 description: "Helm plugin for upgrading sub-charts from umbrella chart with dependency orders"
 command: "$HELM_PLUGIN_DIR/helm-spray"
 hooks:
-  install:"cd $HELM_PLUGIN_DIR; scripts/install_plugin.sh"
-  update:"cd $HELM_PLUGIN_DIR; scripts/install_plugin.sh"
+  install: "cd $HELM_PLUGIN_DIR; scripts/install_plugin.sh"
+  update: "cd $HELM_PLUGIN_DIR; scripts/install_plugin.sh"
 ignoreFlags: false
 useTunnel: false
