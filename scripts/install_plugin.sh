@@ -15,6 +15,7 @@ echo "$url"
 
 # Download with curl if possible.
 # shellcheck disable=SC2230
+mkdir -p releases
 if [ -x "$(which curl 2>/dev/null)" ]; then
     curl -sSL "${url}" -o "releases/v${version}.tar.gz"
 else
