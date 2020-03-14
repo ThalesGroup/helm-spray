@@ -1,7 +1,7 @@
 #!/bin/sh -e
 
 # shellcheck disable=SC2002
-version="$(cat plugin.yaml | grep "version" | cut -d '"' -f 2)"
+version="$(cat plugin.yaml | grep "version" | cut -d ' ' -f 2)"
 echo "Downloading and installing spray v${version} ..."
 
 url=""
