@@ -1,8 +1,8 @@
 # Helm Spray
 
-[![Build Status](https://api.travis-ci.com/gemalto/helm-spray.svg?branch=master)](https://travis-ci.com/gemalto/helm-spray)
+[![Build Status](https://travis-ci.org/ThalesGroup/helm-spray.svg?branch=master)](https://travis-ci.org/ThalesGroup/helm-spray)
 
-![helm-spray](https://gemalto.github.io/helm-spray/logo/helm-spray_150x150.png)
+![helm-spray](https://thalesgroup.github.io/helm-spray/logo/helm-spray_150x150.png)
 
 ## What is Helm Spray?
 
@@ -18,8 +18,7 @@ Each sub-chart is deployed under a specific Release named `<chart name or alias>
 
 Helm Spray is building and delivering under Travis.
 
-[![Build Status](https://api.travis-ci.com/gemalto/helm-spray.svg?branch=master)](https://travis-ci.com/gemalto/helm-spray)
-
+[![Build Status](https://travis-ci.org/ThalesGroup/helm-spray.svg?branch=master)](https://travis-ci.org/ThalesGroup/helm-spray)
 
 ## Usage
 
@@ -183,11 +182,11 @@ First, set up your environment:
 - If you don't have [Glide](http://glide.sh) installed, this will install it into
   `$GOPATH/bin` for you.
 
-Clone this repo into your `$GOPATH`. You can use `go get -d github.com/gemalto/helm-spray`
+Clone this repo into your `$GOPATH`. You can use `go get -d github.com/thalesgroup/helm-spray`
 for that.
 
 ```
-$ cd $GOPATH/src/github.com/gemalto/helm-spray
+$ cd $GOPATH/src/github.com/thalesgroup/helm-spray
 $ make dist_linux
 $ helm plugin install .
 ```
