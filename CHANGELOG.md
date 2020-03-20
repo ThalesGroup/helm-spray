@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 3.4.6 - 03/20/2020
+* Plugin installation via helm plugin install is now possible
+
 ## Version 3.4.5 - 10/08/2019
 * Bugfix issues #39, #40 and #41 [`#42`](https://github.com/gemalto/helm-spray/pull/42) (Patrice Amiel)
 
