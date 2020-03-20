@@ -182,11 +182,11 @@ First, set up your environment:
 - If you don't have [Glide](http://glide.sh) installed, this will install it into
   `$GOPATH/bin` for you.
 
-Clone this repo into your `$GOPATH`. You can use `go get -d github.com/thalesgroup/helm-spray`
+Clone this repo into your `$GOPATH`. You can use `go get -d github.com/gemalto/helm-spray`
 for that.
 
 ```
-$ cd $GOPATH/src/github.com/thalesgroup/helm-spray
+$ cd $GOPATH/src/github.com/gemalto/helm-spray
 $ make dist_linux
 $ helm plugin install .
 ```
