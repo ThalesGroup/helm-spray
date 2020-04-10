@@ -524,71 +524,49 @@ func (p *sprayCmd) spray() error {
 			log(2, "waiting for Liveness and Readiness...")
 
 			if !p.dryRun {
-				for _, status := range helmstatusses {
-					sleep_time := 5
+				sleep_time := 5
+				doneDeployments := false
+				doneStatefulSets := false
+				doneJobs := false
 
-					// Wait for completion of the Deployments update
-					for _, dep := range status.Deployments {
-						done := false
-
-						for i := 0; i < p.timeout; {
-							if p.verbose {
-								log(3, "waiting for Deployment \"%s\"", dep)
-							}
-							if kubectl.IsDeploymentUpToDate(dep, p.namespace) {
-								done = true
-								break
-							}
-							time.Sleep(time.Duration(sleep_time) * time.Second)
-							i = i + sleep_time
+				// Wait for completion of the Deployments/StatefulSets/Jobs
+				for i := 0; i < p.timeout; {
+					deployments := getDeployments(helmstatusses)
+					statefulSets := getStatefulSets(helmstatusses)
+					jobs := getJobs(helmstatusses)
+					if len(deployments) > 0 && !doneDeployments {
+						if p.verbose {
+							log(3, "waiting for Deployments %v", deployments)
 						}
-
-						if !done {
-							logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
-						}
+						doneDeployments, _ = kubectl.AreDeploymentsReady(deployments, p.namespace, p.debug)
+					} else {
+						doneDeployments = true
 					}
-
-					// Wait for completion of the StatefulSets update
-					for _, ss := range status.StatefulSets {
-						done := false
-
-						for i := 0; i < p.timeout; {
-							if p.verbose {
-								log(3, "waiting for StatefulSet \"%s\"", ss)
-							}
-							if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
-								done = true
-								break
-							}
-							time.Sleep(time.Duration(sleep_time) * time.Second)
-							i = i + sleep_time
+					if len(statefulSets) > 0 && !doneStatefulSets {
+						if p.verbose {
+							log(3, "waiting for StatefulSets %v", statefulSets)
 						}
-
-						if !done {
-							logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
-						}
+						doneStatefulSets, _ = kubectl.AreStatefulSetsReady(statefulSets, p.namespace, p.debug)
+					} else {
+						doneStatefulSets = true
 					}
-
-					// Wait for completion of the Jobs
-					for _, job := range status.Jobs {
-						done := false
-
-						for i := 0; i < p.timeout; {
-							if p.verbose {
-								log(3, "waiting for Job \"%s\"", job)
-							}
-							if kubectl.IsJobCompleted(job, p.namespace) {
-								done = true
-								break
-							}
-							time.Sleep(time.Duration(sleep_time) * time.Second)
-							i = i + sleep_time
+					if len(jobs) > 0 && !doneJobs {
+						if p.verbose {
+							log(3, "waiting for Jobs %v", jobs)
 						}
-
-						if !done {
-							logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
-						}
+						doneJobs, _ = kubectl.AreJobsReady(jobs, p.namespace, p.debug)
+					} else {
+						doneJobs = true
 					}
+					if doneDeployments && doneStatefulSets && doneJobs {
+						break
+					}
+					time.Sleep(time.Duration(sleep_time) * time.Second)
+					i = i + sleep_time
+				}
+
+				if !doneDeployments || !doneStatefulSets || !doneJobs {
+					logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
 				}
 			}
 		}
@@ -597,6 +575,30 @@ func (p *sprayCmd) spray() error {
 	log(1, "upgrade of solution chart \"%s\" completed", p.chartName)
 
 	return nil
+}
+
+func getDeployments(helmStatuses []helm.HelmStatus) []string {
+	deployments := make([]string, 0)
+	for _, status := range helmStatuses {
+		deployments = append(deployments, status.Deployments...)
+	}
+	return deployments
+}
+
+func getStatefulSets(helmStatuses []helm.HelmStatus) []string {
+	statefulSets := make([]string, 0)
+	for _, status := range helmStatuses {
+		statefulSets = append(statefulSets, status.StatefulSets...)
+	}
+	return statefulSets
+}
+
+func getJobs(helmStatuses []helm.HelmStatus) []string {
+	jobs := make([]string, 0)
+	for _, status := range helmStatuses {
+		jobs = append(jobs, status.Jobs...)
+	}
+	return jobs
 }
 
 // Retrieve the highest chart.weight in values.yaml
