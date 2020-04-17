@@ -13,40 +13,38 @@ limitations under the License.
 package helm
 
 import (
-	"bytes"
-	"strings"
-	"strconv"
 	"bufio"
-	"io/ioutil"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
-	"runtime"
 	"regexp"
-	"encoding/json"
+	"runtime"
+	"strconv"
+	"strings"
 )
-
 
 // Types returned by some of the functions
 type HelmStatus struct {
-	Namespace string
-	Status string
-	Resources string
-	Deployments []string
+	Namespace    string
+	Status       string
+	Resources    string
+	Deployments  []string
 	StatefulSets []string
-	Jobs []string
+	Jobs         []string
 }
 
 type HelmRelease struct {
-	Name			string
-	Revision		int
-	Updated			string
-	Status			string
-	Chart			string
-	AppVersion		string
-	Namespace		string
+	Name       string
+	Revision   int
+	Updated    string
+	Status     string
+	Chart      string
+	AppVersion string
+	Namespace  string
 }
-
 
 // Printing error or outputs
 func printError(err error) {
@@ -105,39 +103,39 @@ func getStringBetween(value string, a string, b string) string {
 	return value[posFirstAdjusted:posLastAdjusted]
 }
 
-// Parse the "helm status"-like output to extract releant information
+// Parse the "helm status"-like output to extract relevant information
 // WARNING: this code has been developed and tested with version 'v2.12.2' of Helm
 //          it may need to be adapted to other versions of Helm.
 func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	var out_str = string(outs)
 
 	// Extract the namespace
-	var namespace = regexp.MustCompile(`NAMESPACE: (.*)`)
+	var namespace = regexp.MustCompile(`^NAMESPACE: (.*)`)
 	result := namespace.FindStringSubmatch(out_str)
-	if len(result) > 0 {
-		helmstatus.Namespace = string(result[1])
+	if len(result) > 1 {
+		helmstatus.Namespace = result[1]
 	}
 
 	// Extract the status
-	var status = regexp.MustCompile(`STATUS: (.*)`)
+	var status = regexp.MustCompile(`^STATUS: (.*)`)
 	result = status.FindStringSubmatch(out_str)
-	if len(result) > 0 {
-		helmstatus.Status = string(result[1])
+	if len(result) > 1 {
+		helmstatus.Status = result[1]
 	}
 
 	// Extract the resources
-	helmstatus.Resources = getStringAfterLast (out_str, "RESOURCES:")
+	helmstatus.Resources = getStringAfterLast(out_str, "RESOURCES:")
 
 	// ... and get the Deployments from the resources
-	var res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Deployment", "==>") + "\n" + 
-				getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/Deployment", "==>") + "\n" + 
-				getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/Deployment", "==>")
+	var res = getStringBetween(helmstatus.Resources+"==>", "==> v1/Deployment", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta2/Deployment", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta1/Deployment", "==>")
 	var res_as_slice = make([]string, 0)
 	var scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
-		if len (scanner.Text()) > 0 {
+		if len(scanner.Text()) > 0 {
 			name := strings.Fields(scanner.Text())[0]
-			res_as_slice = append (res_as_slice, name)
+			res_as_slice = append(res_as_slice, name)
 		}
 	}
 	if len(res_as_slice) > 0 {
@@ -145,16 +143,16 @@ func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	}
 
 	// ... and get the StatefulSets from the resources
-	res = getStringBetween (helmstatus.Resources + "==>", "==> v1/StatefulSet", "==>") + "\n" + 
-			getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/StatefulSet", "==>") + "\n" + 
-			getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/StatefulSet", "==>")
+	res = getStringBetween(helmstatus.Resources+"==>", "==> v1/StatefulSet", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta2/StatefulSet", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta1/StatefulSet", "==>")
 
 	res_as_slice = make([]string, 0)
 	scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
-		if len (scanner.Text()) > 0 {
+		if len(scanner.Text()) > 0 {
 			name := strings.Fields(scanner.Text())[0]
-			res_as_slice = append (res_as_slice, name)
+			res_as_slice = append(res_as_slice, name)
 		}
 	}
 	if len(res_as_slice) > 0 {
@@ -162,20 +160,19 @@ func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	}
 
 	// ... and get the Jobs from the resources
-	res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Job", "==>")
+	res = getStringBetween(helmstatus.Resources+"==>", "==> v1/Job", "==>")
 	res_as_slice = make([]string, 0)
 	scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
-		if len (scanner.Text()) > 0 {
+		if len(scanner.Text()) > 0 {
 			name := strings.Fields(scanner.Text())[0]
-			res_as_slice = append (res_as_slice, name)
+			res_as_slice = append(res_as_slice, name)
 		}
 	}
 	if len(res_as_slice) > 0 {
 		helmstatus.Jobs = res_as_slice[1:]
 	}
 }
-
 
 // Helm functions calls
 // --------------------
@@ -196,8 +193,8 @@ func Version() {
 
 // List ...
 type helmReleasesList struct {
-	Next			string
-	Releases		[]HelmRelease
+	Next     string
+	Releases []HelmRelease
 }
 
 func List(namespace string) map[string]HelmRelease {
@@ -223,7 +220,7 @@ func List(namespace string) map[string]HelmRelease {
 		// Transform the received json into structs
 		output := cmdOutput.Bytes()
 		// In case Spray has been launched in debug mode, then leading messages are polluting the output. Removing them until the starting "{"
-		outputWithoutLeadingDebugMessages := "{" + getStringAfterFirst (string(output), "{")
+		outputWithoutLeadingDebugMessages := "{" + getStringAfterFirst(string(output), "{")
 		var releases helmReleasesList
 		json.Unmarshal([]byte(outputWithoutLeadingDebugMessages), &releases)
 
@@ -241,7 +238,7 @@ func List(namespace string) map[string]HelmRelease {
 
 // ListAll ...
 func ListAll() map[string]HelmRelease {
-	return List ("")
+	return List("")
 }
 
 // Delete chart
@@ -425,7 +422,6 @@ func Fetch(chart string, version string) string {
 
 	output := cmdOutput.Bytes()
 	var output_str = string(output)
-	var result = strings.Split (output_str, endOfLine)
+	var result = strings.Split(output_str, endOfLine)
 	return result[0]
 }
-

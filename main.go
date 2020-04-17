@@ -232,7 +232,7 @@ func (p *sprayCmd) spray() error {
 		updatedDefaultValues := processIncludeInValuesFile(chart, p.verbose)
 
 		// Load default values...
-		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
+		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: updatedDefaultValues})
 		if err != nil {
 			if p.verbose {
 				logWithNumberedLines(1, updatedDefaultValues)
@@ -257,7 +257,7 @@ func (p *sprayCmd) spray() error {
 		if _, err = tempFile.Write([]byte(updatedDefaultValues)); err != nil {
 			logErrorAndExit("Error writing updated default values file for umbrella chart into temporary file: %s", err)
 		}
-		p.valueFiles = append([]string{tempFile.Name()}, p.valueFiles...)
+		p.valueFiles = append(p.valueFiles, tempFile.Name())
 
 	} else {
 		values, err = chartutil.CoalesceValues(chart, chart.GetValues())
@@ -481,26 +481,26 @@ func (p *sprayCmd) spray() error {
 					shouldWait = true
 
 					// Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
-					valuesSet := ""
+					depValuesSet := ""
 					for _, dep := range dependencies {
 						if dep.UsedName == dependency.UsedName {
-							valuesSet = valuesSet + dep.UsedName + ".enabled=true,"
+							depValuesSet = depValuesSet + dep.UsedName + ".enabled=true,"
 						} else {
-							valuesSet = valuesSet + dep.UsedName + ".enabled=false,"
+							depValuesSet = depValuesSet + dep.UsedName + ".enabled=false,"
 						}
 					}
-					p.valuesSet = append(p.valuesSet, valuesSet)
+					var valuesSet []string
+					valuesSet = append(valuesSet, p.valuesSet...)
+					valuesSet = append(valuesSet, depValuesSet)
 
 					// Upgrade the Deployment
-					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, p.valuesSet, p.valuesSetString, p.valuesSetFile, p.force, p.timeout, p.dryRun, p.debug)
+					helmstatus := helm.UpgradeWithValues(p.namespace, dependency.CorrespondingReleaseName, p.chartName, p.resetValues, p.reuseValues, p.valueFiles, valuesSet, p.valuesSetString, p.valuesSetFile, p.force, p.timeout, p.dryRun, p.debug)
 					helmstatusses = append(helmstatusses, helmstatus)
 
 					log(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
-					if p.verbose {
-						log(3, "helm status: %s", helmstatus.Status)
-					}
 
 					if p.verbose {
+						log(3, "helm status: %s", helmstatus.Status)
 						log(3, "helm resources:")
 						var scanner = bufio.NewScanner(strings.NewReader(helmstatus.Resources))
 						for scanner.Scan() {
@@ -510,9 +510,7 @@ func (p *sprayCmd) spray() error {
 						}
 					}
 
-					if helmstatus.Status == "" {
-						log(2, "Warning: no status returned by helm.")
-					} else if helmstatus.Status != "DEPLOYED" {
+					if !p.dryRun && helmstatus.Status != "DEPLOYED" {
 						logErrorAndExit("Error: status returned by helm differs from \"DEPLOYED\". Cannot continue spray processing.")
 					}
 				}
@@ -520,54 +518,52 @@ func (p *sprayCmd) spray() error {
 		}
 
 		// Wait availability of the just upgraded Releases
-		if shouldWait {
+		if shouldWait && !p.dryRun {
 			log(2, "waiting for Liveness and Readiness...")
 
-			if !p.dryRun {
-				sleep_time := 5
-				doneDeployments := false
-				doneStatefulSets := false
-				doneJobs := false
+			sleep_time := 5
+			doneDeployments := false
+			doneStatefulSets := false
+			doneJobs := false
 
-				// Wait for completion of the Deployments/StatefulSets/Jobs
-				for i := 0; i < p.timeout; {
-					deployments := getDeployments(helmstatusses)
-					statefulSets := getStatefulSets(helmstatusses)
-					jobs := getJobs(helmstatusses)
-					if len(deployments) > 0 && !doneDeployments {
-						if p.verbose {
-							log(3, "waiting for Deployments %v", deployments)
-						}
-						doneDeployments, _ = kubectl.AreDeploymentsReady(deployments, p.namespace, p.debug)
-					} else {
-						doneDeployments = true
+			// Wait for completion of the Deployments/StatefulSets/Jobs
+			for i := 0; i < p.timeout; {
+				deployments := getDeployments(helmstatusses)
+				statefulSets := getStatefulSets(helmstatusses)
+				jobs := getJobs(helmstatusses)
+				if len(deployments) > 0 && !doneDeployments {
+					if p.verbose {
+						log(3, "waiting for Deployments %v", deployments)
 					}
-					if len(statefulSets) > 0 && !doneStatefulSets {
-						if p.verbose {
-							log(3, "waiting for StatefulSets %v", statefulSets)
-						}
-						doneStatefulSets, _ = kubectl.AreStatefulSetsReady(statefulSets, p.namespace, p.debug)
-					} else {
-						doneStatefulSets = true
-					}
-					if len(jobs) > 0 && !doneJobs {
-						if p.verbose {
-							log(3, "waiting for Jobs %v", jobs)
-						}
-						doneJobs, _ = kubectl.AreJobsReady(jobs, p.namespace, p.debug)
-					} else {
-						doneJobs = true
-					}
-					if doneDeployments && doneStatefulSets && doneJobs {
-						break
-					}
-					time.Sleep(time.Duration(sleep_time) * time.Second)
-					i = i + sleep_time
+					doneDeployments, _ = kubectl.AreDeploymentsReady(deployments, p.namespace, p.debug)
+				} else {
+					doneDeployments = true
 				}
+				if len(statefulSets) > 0 && !doneStatefulSets {
+					if p.verbose {
+						log(3, "waiting for StatefulSets %v", statefulSets)
+					}
+					doneStatefulSets, _ = kubectl.AreStatefulSetsReady(statefulSets, p.namespace, p.debug)
+				} else {
+					doneStatefulSets = true
+				}
+				if len(jobs) > 0 && !doneJobs {
+					if p.verbose {
+						log(3, "waiting for Jobs %v", jobs)
+					}
+					doneJobs, _ = kubectl.AreJobsReady(jobs, p.namespace, p.debug)
+				} else {
+					doneJobs = true
+				}
+				if doneDeployments && doneStatefulSets && doneJobs {
+					break
+				}
+				time.Sleep(time.Duration(sleep_time) * time.Second)
+				i = i + sleep_time
+			}
 
-				if !doneDeployments || !doneStatefulSets || !doneJobs {
-					logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
-				}
+			if !doneDeployments || !doneStatefulSets || !doneJobs {
+				logErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
 			}
 		}
 	}
