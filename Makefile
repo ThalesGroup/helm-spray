@@ -3,8 +3,8 @@ DIST := $(CURDIR)/_dist
 LDFLAGS := "-X main.version=${VERSION}"
 TAR_LINUX := "helm-spray-linux-amd64.tar.gz"
 TAR_WINDOWS := "helm-spray-windows-amd64.tar.gz"
-BINARY_LINUX := "helm-spray"
-BINARY_WINDOWS := "helm-spray.exe"
+BINARY_LINUX := "bin/helm-spray"
+BINARY_WINDOWS := "bin/helm-spray.exe"
 
 .PHONY: dist
 
