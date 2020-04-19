@@ -199,38 +199,27 @@ type helmReleasesList struct {
 
 func List(namespace string) map[string]HelmRelease {
 	helmlist := make(map[string]HelmRelease, 0)
-	next := "~FIRST"
 
-	// Loop on the chunks returned by the "helm list" command
-	for next != "" {
-		if next == "~FIRST" {
-			next = ""
-		}
+	// Get the list of Releases of the chunk
+	cmd := exec.Command("helm", "list", "--namespace", namespace, "-o", "json")
+	cmdOutput := &bytes.Buffer{}
+	cmd.Stdout = cmdOutput
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		printError(err)
+		os.Exit(1)
+	}
 
-		// Get the list of Releases of the chunk
-		cmd := exec.Command("helm", "list", "--namespace", namespace, "-c", "--output", "json", "-o", next)
-		cmdOutput := &bytes.Buffer{}
-		cmd.Stdout = cmdOutput
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			printError(err)
-			os.Exit(1)
-		}
+	// Transform the received json into structs
+	output := cmdOutput.Bytes()
+	// In case Spray has been launched in debug mode, then leading messages are polluting the output. Removing them until the starting "{"
+	outputWithoutLeadingDebugMessages := "{" + getStringAfterFirst(string(output), "{")
+	var releases helmReleasesList
+	json.Unmarshal([]byte(outputWithoutLeadingDebugMessages), &releases)
 
-		// Transform the received json into structs
-		output := cmdOutput.Bytes()
-		// In case Spray has been launched in debug mode, then leading messages are polluting the output. Removing them until the starting "{"
-		outputWithoutLeadingDebugMessages := "{" + getStringAfterFirst(string(output), "{")
-		var releases helmReleasesList
-		json.Unmarshal([]byte(outputWithoutLeadingDebugMessages), &releases)
-
-		// Add the Releases into a map
-		for _, r := range releases.Releases {
-			helmlist[r.Name] = r
-		}
-
-		// Loop on next chunk
-		next = releases.Next
+	// Add the Releases into a map
+	for _, r := range releases.Releases {
+		helmlist[r.Name] = r
 	}
 
 	return helmlist
@@ -261,7 +250,7 @@ func Delete(chart string, dryRun bool) {
 // UpgradeWithValues ...
 func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string, force bool, timeout int, dryRun bool, debug bool) HelmStatus {
 	// Prepare parameters...
-	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout)}
+	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout) + "s"}
 
 	for _, v := range valuesSet {
 		myargs = append(myargs, "--set")
