@@ -23,6 +23,7 @@ import (
 	"github.com/gemalto/helm-spray/pkg/kubectl"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	cliValues "helm.sh/helm/v3/pkg/cli/values"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -96,7 +97,7 @@ charts in a repository, use 'helm search'.
 
 var version = "SNAPSHOT"
 
-func newSprayCmd(args []string) *cobra.Command {
+func newSprayCmd() *cobra.Command {
 
 	p := &sprayCmd{}
 
@@ -108,39 +109,43 @@ func newSprayCmd(args []string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 
 			if len(args) == 0 {
-				return errors.New("This command needs at least 1 argument: chart name")
+				return errors.New("this command needs at least 1 argument: chart name")
 			} else if len(args) > 1 {
-				return errors.New("This command accepts only 1 argument: chart name")
+				return errors.New("this command accepts only 1 argument: chart name")
 			}
 
 			p.chartName = args[0]
 
 			if p.chartVersion != "" {
 				if strings.HasSuffix(p.chartName, "tgz") {
-					log.ErrorAndExit("You cannot use --version together with chart archive")
+					return errors.New("cannot use --version together with chart archive")
 				}
 
 				if _, err := os.Stat(p.chartName); err == nil {
-					log.ErrorAndExit("You cannot use --version together with chart directory")
+					return errors.New("cannot use --version together with chart directory")
 				}
 
 				if strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://") {
-					log.ErrorAndExit("You cannot use --version together with chart URL")
+					return errors.New("cannot use --version together with chart URL")
 				}
 			}
 
 			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
-				log.ErrorAndExit("You cannot use both --prefix-releases and --prefix-releases-with-namespace together")
+				return errors.New("cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 
 			if len(p.targets) > 0 && len(p.excludes) > 0 {
-				log.ErrorAndExit("You cannot use both --target and --exclude together")
+				return errors.New("cannot use both --target and --exclude together")
 			}
 
 			// If chart is specified through an url, the fetch it from the url.
 			if strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://") {
 				log.Info(1, "fetching chart from url \"%s\"...", p.chartName)
-				p.chartName = helm.Fetch(p.chartName, "")
+				var err error
+				p.chartName, err = helm.Fetch(p.chartName, "")
+				if err != nil {
+					return fmt.Errorf("fetching chart %s: %w", p.chartName, err)
+				}
 			} else if _, err := os.Stat(p.chartName); err != nil {
 				// If local file (or directory) does not exist, then fetch it from a repo.
 				if p.chartVersion != "" {
@@ -148,7 +153,11 @@ func newSprayCmd(args []string) *cobra.Command {
 				} else {
 					log.Info(1, "fetching chart \"%s\" from repos...", p.chartName)
 				}
-				p.chartName = helm.Fetch(p.chartName, p.chartVersion)
+				var err error
+				p.chartName, err = helm.Fetch(p.chartName, p.chartVersion)
+				if err != nil {
+					return fmt.Errorf("fetching chart %s with version %s: %w", p.chartName, p.chartVersion, err)
+				}
 			} else {
 				log.Info(1, "processing chart from local file or directory \"%s\"...", p.chartName)
 			}
@@ -176,13 +185,10 @@ func newSprayCmd(args []string) *cobra.Command {
 	f.BoolVar(&p.verbose, "verbose", false, "enable spray verbose output")
 	f.BoolVar(&p.debug, "debug", false, "enable helm debug output (also include spray verbose output)")
 
-	f.Parse(args)
-
 	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
-	if !p.debug {
-		if "1" == os.Getenv("HELM_DEBUG") {
-			p.debug = true
-		}
+	helmDebug := os.Getenv("HELM_DEBUG")
+	if helmDebug == "1" || strings.EqualFold(helmDebug, "true") || strings.EqualFold(helmDebug, "on") {
+		p.debug = true
 	}
 	if p.debug {
 		p.verbose = true
@@ -197,12 +203,30 @@ func (p *sprayCmd) spray() error {
 	// Load and validate the umbrella chart...
 	chart, err := loader.Load(p.chartName)
 	if err != nil {
-		log.ErrorAndExit("Error loading chart \"%s\": %s", p.chartName, err)
+		return fmt.Errorf("loading chart \"%s\": %w", p.chartName, err)
 	}
 
-	mergedValues, valueFile := values.Merge(chart, p.reuseValues, &p.valuesOpts, p.verbose)
-	if len(valueFile) > 0 {
-		p.valuesOpts.ValueFiles = append(p.valuesOpts.ValueFiles, valueFile)
+	mergedValues, updatedChartValuesAsString, err := values.Merge(chart, p.reuseValues, &p.valuesOpts, p.verbose)
+	if err != nil {
+		return fmt.Errorf("merging values: %w", err)
+	}
+	if len(updatedChartValuesAsString) > 0 {
+		// Write default values to a temporary file and add it to the list of values files,
+		// for later usage during the calls to helm
+		tempDir, err := ioutil.TempDir("", "spray-")
+		if err != nil {
+			return fmt.Errorf("creating temporary directory to write updated default values file for umbrella chart: %w", err)
+		}
+		defer removeTempDir(tempDir)
+		tempFile, err := ioutil.TempFile(tempDir, "updatedDefaultValues-*.yaml")
+		if err != nil {
+			return fmt.Errorf("creating temporary file to write updated default values file for umbrella chart: %w", err)
+		}
+		defer removeTempFile(tempFile.Name())
+		if _, err = tempFile.Write([]byte(updatedChartValuesAsString)); err != nil {
+			return fmt.Errorf("writing updated default values file for umbrella chart into temporary file: %w", err)
+		}
+		p.valuesOpts.ValueFiles = append(p.valuesOpts.ValueFiles, tempFile.Name())
 	}
 
 	releasePrefix := ""
@@ -211,7 +235,10 @@ func (p *sprayCmd) spray() error {
 	} else if len(p.prefixReleases) > 0 {
 		releasePrefix = p.prefixReleases + "-"
 	}
-	deps := dependencies.Get(chart, &mergedValues, p.targets, p.excludes, releasePrefix, p.verbose)
+	deps, err := dependencies.Get(chart, &mergedValues, p.targets, p.excludes, releasePrefix, p.verbose)
+	if err != nil {
+		return fmt.Errorf("analyzing dependencies: %w", err)
+	}
 
 	// Starting the processing...
 	if len(releasePrefix) > 0 {
@@ -220,21 +247,33 @@ func (p *sprayCmd) spray() error {
 		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\"", p.chartName, p.namespace)
 	}
 
-	releases := helm.List(p.namespace)
+	releases, err := helm.List(p.namespace)
+	if err != nil {
+		return fmt.Errorf("listing releases: %w", err)
+	}
 
 	if p.verbose {
 		logRelease(releases, deps)
 	}
 
-	checkTargetsAndExcludes(deps, p.targets, p.excludes)
+	err = checkTargetsAndExcludes(deps, p.targets, p.excludes)
+	if err != nil {
+		return fmt.Errorf("checking targets and excludes: %w", err)
+	}
 
 	// Loop on the increasing weight
 	for i := 0; i <= maxWeight(deps); i++ {
-		statuses := make([]helm.HelmStatus, 0)
-		shouldWait := upgrade(statuses, releases, deps, i, p)
+		statuses := make([]helm.Status, 0)
+		shouldWait, err := upgrade(statuses, releases, deps, i, p)
+		if err != nil {
+			return err
+		}
 		// Wait availability of the just upgraded Releases
 		if shouldWait && !p.dryRun {
-			wait(statuses, p)
+			err = wait(statuses, p)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -243,7 +282,7 @@ func (p *sprayCmd) spray() error {
 	return nil
 }
 
-func upgrade(statuses []helm.HelmStatus, releases map[string]helm.HelmRelease, deps []dependencies.Dependency, currentWeight int, p *sprayCmd) bool {
+func upgrade(statuses []helm.Status, releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int, p *sprayCmd) (bool, error) {
 	shouldWait := false
 	firstInWeight := true
 	// Upgrade the targeted Deployments corresponding the the current weight
@@ -256,7 +295,8 @@ func upgrade(statuses []helm.HelmStatus, releases map[string]helm.HelmRelease, d
 				}
 
 				if release, ok := releases[dependency.CorrespondingReleaseName]; ok {
-					log.Info(2, "upgrading release \"%s\": going from revision %d (status %s) to %d (appVersion %s)...", dependency.CorrespondingReleaseName, release.Revision, release.Status, release.Revision+1, dependency.AppVersion)
+					oldRevision, _ := strconv.Atoi(release.Revision)
+					log.Info(2, "upgrading release \"%s\": going from revision %d (status %s) to %d (appVersion %s)...", dependency.CorrespondingReleaseName, oldRevision, release.Status, oldRevision+1, dependency.AppVersion)
 
 				} else {
 					log.Info(2, "upgrading release \"%s\": deploying first revision (appVersion %s)...", dependency.CorrespondingReleaseName, dependency.AppVersion)
@@ -278,7 +318,7 @@ func upgrade(statuses []helm.HelmStatus, releases map[string]helm.HelmRelease, d
 				valuesSet = append(valuesSet, depValuesSet)
 
 				// Upgrade the Deployment
-				helmstatus := helm.UpgradeWithValues(
+				helmstatus, err := helm.UpgradeWithValues(
 					p.namespace,
 					dependency.CorrespondingReleaseName,
 					p.chartName,
@@ -293,6 +333,9 @@ func upgrade(statuses []helm.HelmStatus, releases map[string]helm.HelmRelease, d
 					p.dryRun,
 					p.debug,
 				)
+				if err != nil {
+					return false, fmt.Errorf("calling helm upgrade: %w", err)
+				}
 				statuses = append(statuses, helmstatus)
 
 				log.Info(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
@@ -309,18 +352,18 @@ func upgrade(statuses []helm.HelmStatus, releases map[string]helm.HelmRelease, d
 				}
 
 				if !p.dryRun && helmstatus.Status != "DEPLOYED" {
-					log.ErrorAndExit("Error: status returned by helm differs from \"DEPLOYED\". Cannot continue spray processing.")
+					return false, errors.New("status returned by helm differs from \"DEPLOYED\", spray interrupted")
 				}
 			}
 		}
 	}
-	return shouldWait
+	return shouldWait, nil
 }
 
-func wait(statuses []helm.HelmStatus, p *sprayCmd) {
-	log.Info(2, "waiting for Liveness and Readiness...")
+func wait(statuses []helm.Status, p *sprayCmd) error {
+	log.Info(2, "waiting for liveness and readiness...")
 
-	sleep_time := 5
+	sleepTime := 5
 	doneDeployments := false
 	doneStatefulSets := false
 	doneJobs := false
@@ -357,16 +400,17 @@ func wait(statuses []helm.HelmStatus, p *sprayCmd) {
 		if doneDeployments && doneStatefulSets && doneJobs {
 			break
 		}
-		time.Sleep(time.Duration(sleep_time) * time.Second)
-		i = i + sleep_time
+		time.Sleep(time.Duration(sleepTime) * time.Second)
+		i = i + sleepTime
 	}
 
 	if !doneDeployments || !doneStatefulSets || !doneJobs {
-		log.ErrorAndExit("Error: UPGRADE FAILED: timed out waiting for the condition\n==> Error: exit status 1")
+		return errors.New("timed out waiting for liveness and readiness")
 	}
+	return nil
 }
 
-func deployments(helmStatuses []helm.HelmStatus) []string {
+func deployments(helmStatuses []helm.Status) []string {
 	deployments := make([]string, 0)
 	for _, status := range helmStatuses {
 		deployments = append(deployments, status.Deployments...)
@@ -374,7 +418,7 @@ func deployments(helmStatuses []helm.HelmStatus) []string {
 	return deployments
 }
 
-func statefulSets(helmStatuses []helm.HelmStatus) []string {
+func statefulSets(helmStatuses []helm.Status) []string {
 	statefulSets := make([]string, 0)
 	for _, status := range helmStatuses {
 		statefulSets = append(statefulSets, status.StatefulSets...)
@@ -382,7 +426,7 @@ func statefulSets(helmStatuses []helm.HelmStatus) []string {
 	return statefulSets
 }
 
-func jobs(helmStatuses []helm.HelmStatus) []string {
+func jobs(helmStatuses []helm.Status) []string {
 	jobs := make([]string, 0)
 	for _, status := range helmStatuses {
 		jobs = append(jobs, status.Jobs...)
@@ -403,7 +447,7 @@ func maxWeight(deps []dependencies.Dependency) (m int) {
 	return m
 }
 
-func checkTargetsAndExcludes(deps []dependencies.Dependency, targets []string, excludes []string) {
+func checkTargetsAndExcludes(deps []dependencies.Dependency, targets []string, excludes []string) error {
 	// Check that the provided target(s) or exclude(s) correspond to valid sub-chart names or alias
 	if len(targets) > 0 {
 		for i := range targets {
@@ -415,7 +459,7 @@ func checkTargetsAndExcludes(deps []dependencies.Dependency, targets []string, e
 				}
 			}
 			if !found {
-				log.ErrorAndExit("\"%s\" is not a valid sub-chart name/alias", targets[i])
+				return fmt.Errorf("invalid targetted sub-chart name/alias \"%s\"", targets[i])
 			}
 		}
 	} else if len(excludes) > 0 {
@@ -428,22 +472,23 @@ func checkTargetsAndExcludes(deps []dependencies.Dependency, targets []string, e
 				}
 			}
 			if !found {
-				log.ErrorAndExit("\"%s\" is not a valid sub-chart name/alias", excludes[i])
+				return fmt.Errorf("invalid excluded sub-chart name/alias \"%s\"", excludes[i])
 			}
 		}
 	}
+	return nil
 }
 
-func logRelease(releases map[string]helm.HelmRelease, deps []dependencies.Dependency) {
+func logRelease(releases map[string]helm.Release, deps []dependencies.Dependency) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-	fmt.Fprintln(w, "[spray]  \t subchart\t is alias of\t targeted\t weight\t| corresponding release\t revision\t status\t")
-	fmt.Fprintln(w, "[spray]  \t --------\t -----------\t --------\t ------\t| ---------------------\t --------\t ------\t")
+	_, _ = fmt.Fprintln(w, "[spray]  \t subchart\t is alias of\t targeted\t weight\t| corresponding release\t revision\t status\t")
+	_, _ = fmt.Fprintln(w, "[spray]  \t --------\t -----------\t --------\t ------\t| ---------------------\t --------\t ------\t")
 
 	for _, dependency := range deps {
 		currentRevision := "None"
 		currentStatus := "Not deployed"
 		if release, ok := releases[dependency.CorrespondingReleaseName]; ok {
-			currentRevision = strconv.Itoa(release.Revision)
+			currentRevision = release.Revision
 			currentStatus = release.Status
 		}
 
@@ -461,13 +506,25 @@ func logRelease(releases map[string]helm.HelmRelease, deps []dependencies.Depend
 			targeted = "false (no tag match)"
 		}
 
-		fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+		_, _ = fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 	}
-	w.Flush()
+	_ = w.Flush()
+}
+
+func removeTempDir(tempDir string) {
+	if err := os.RemoveAll(tempDir); err != nil {
+		log.Error("Error: removing temporary directory: %s", err)
+	}
+}
+
+func removeTempFile(tempFile string) {
+	if err := os.Remove(tempFile); err != nil {
+		log.Error("Error: removing temporary file: %s", err)
+	}
 }
 
 func main() {
-	cmd := newSprayCmd(os.Args[1:])
+	cmd := newSprayCmd()
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}

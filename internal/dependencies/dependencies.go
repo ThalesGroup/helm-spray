@@ -22,7 +22,7 @@ type Dependency struct {
 	AllowedByTags            bool
 }
 
-func Get(chart *chart.Chart, values *chartutil.Values, targets []string, excludes []string, releasePrefix string, verbose bool) []Dependency {
+func Get(chart *chart.Chart, values *chartutil.Values, targets []string, excludes []string, releasePrefix string, verbose bool) ([]Dependency, error) {
 	// Compute tags
 	providedTags := tags(values, verbose)
 
@@ -81,7 +81,7 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 		dependencies[i].Weight = 0
 		weightJson, err := values.PathValue(dependencies[i].UsedName + ".weight")
 		if err != nil {
-			log.ErrorAndExit("Error computing weight value for sub-chart \"%s\": %s", dependencies[i].UsedName, err)
+			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
 		}
 
 		weightInteger := 0
@@ -89,7 +89,7 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 		if reflect.TypeOf(weightJson).String() == "json.Number" {
 			w, err := weightJson.(json.Number).Int64()
 			if err != nil {
-				log.ErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
+				return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
 			}
 			weightInteger = int(w)
 
@@ -97,11 +97,11 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 			weightInteger = int(weightJson.(float64))
 
 		} else {
-			log.ErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be an integer", dependencies[i].UsedName)
+			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be an integer", dependencies[i].UsedName)
 		}
 
 		if weightInteger < 0 {
-			log.ErrorAndExit("Error computing weight value for sub-chart \"%s\": value shall be positive or equal to zero", dependencies[i].UsedName)
+			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be positive or equal to zero", dependencies[i].UsedName)
 		}
 		dependencies[i].Weight = weightInteger
 		dependencies[i].CorrespondingReleaseName = releasePrefix + dependencies[i].UsedName
@@ -114,7 +114,7 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 			}
 		}
 	}
-	return dependencies
+	return dependencies, nil
 }
 
 func tags(values *chartutil.Values, verbose bool) map[string]interface{} {
