@@ -226,7 +226,12 @@ func (p *sprayCmd) spray() error {
 		if _, err = tempFile.Write([]byte(updatedChartValuesAsString)); err != nil {
 			return fmt.Errorf("writing updated default values file for umbrella chart into temporary file: %w", err)
 		}
-		p.valuesOpts.ValueFiles = append(p.valuesOpts.ValueFiles, tempFile.Name())
+		err = tempFile.Close()
+		if err != nil {
+			return fmt.Errorf("closing temporary file to write updated default values file for umbrella chart: %w", err)
+		}
+		prependArray := []string{tempFile.Name()}
+		p.valuesOpts.ValueFiles = append(prependArray, p.valuesOpts.ValueFiles...)
 	}
 
 	releasePrefix := ""
