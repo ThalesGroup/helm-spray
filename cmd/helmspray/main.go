@@ -356,8 +356,8 @@ func upgrade(statuses []helm.Status, releases map[string]helm.Release, deps []de
 					}
 				}
 
-				if !p.dryRun && helmstatus.Status != "DEPLOYED" {
-					return false, errors.New("status returned by helm differs from \"DEPLOYED\", spray interrupted")
+				if !p.dryRun && helmstatus.Status != "deployed" {
+					return false, errors.New("status returned by helm differs from \"deployed\", spray interrupted")
 				}
 			}
 		}

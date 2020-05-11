@@ -83,14 +83,14 @@ func parseStatusOutput(outs []byte, helmstatus *Status) {
 	var outStr = string(outs)
 
 	// Extract the namespace
-	var namespace = regexp.MustCompile(`^NAMESPACE: (.*)`)
+	var namespace = regexp.MustCompile(`(?m)^NAMESPACE: (.*)$`)
 	result := namespace.FindStringSubmatch(outStr)
 	if len(result) > 1 {
 		helmstatus.Namespace = result[1]
 	}
 
 	// Extract the status
-	var status = regexp.MustCompile(`^STATUS: (.*)`)
+	var status = regexp.MustCompile(`(?m)^STATUS: (.*)$`)
 	result = status.FindStringSubmatch(outStr)
 	if len(result) > 1 {
 		helmstatus.Status = result[1]
