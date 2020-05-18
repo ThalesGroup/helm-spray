@@ -16,7 +16,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/gemalto/helm-spray/internal/log"
 	"io/ioutil"
 	"os"
@@ -227,7 +226,7 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	output := cmdOutput.Bytes()
 
 	if debug {
-		fmt.Printf(string(output))
+		log.Info(1, "helm command for \"%s\" returned: \n%s\n", releaseName, string(output))
 	}
 	if err != nil {
 		return Status{}, err

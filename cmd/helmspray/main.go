@@ -167,7 +167,6 @@ func newSprayCmd() *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.StringVarP(&p.namespace, "namespace", "n", "default", "namespace to spray the chart into")
 	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
 	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted")
 	f.StringSliceVarP(&p.excludes, "exclude", "x", []string{}, "specify the subchart to exclude (can specify multiple): process all subcharts except the ones specified in '--exclude'")
@@ -194,11 +193,23 @@ func newSprayCmd() *cobra.Command {
 		p.verbose = true
 	}
 
+	// When called through helm, namespace is transmitted through the HELM_NAMESPACE envvar
+	namespace := os.Getenv("HELM_NAMESPACE")
+	if len(namespace) > 0 {
+		p.namespace = namespace
+	} else {
+		p.namespace = "default"
+	}
+
 	return cmd
 }
 
 // Running Spray command
 func (p *sprayCmd) spray() error {
+
+	if p.debug {
+		log.Info(1, "starting spray with flags: %+v\n", p)
+	}
 
 	// Load and validate the umbrella chart...
 	chart, err := loader.Load(p.chartName)
