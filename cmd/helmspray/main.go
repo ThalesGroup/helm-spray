@@ -21,6 +21,7 @@ import (
 	"github.com/gemalto/helm-spray/internal/values"
 	"github.com/gemalto/helm-spray/pkg/helm"
 	"github.com/gemalto/helm-spray/pkg/kubectl"
+	"github.com/gemalto/helm-spray/pkg/util"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	cliValues "helm.sh/helm/v3/pkg/cli/values"
 	"io/ioutil"
@@ -211,6 +212,8 @@ func (p *sprayCmd) spray() error {
 		log.Info(1, "starting spray with flags: %+v\n", p)
 	}
 
+	startTime := time.Now()
+
 	// Load and validate the umbrella chart...
 	chart, err := loader.Load(p.chartName)
 	if err != nil {
@@ -293,7 +296,7 @@ func (p *sprayCmd) spray() error {
 		}
 	}
 
-	log.Info(1, "upgrade of solution chart \"%s\" completed", p.chartName)
+	log.Info(1, "upgrade of solution chart \"%s\" completed in %s", p.chartName, util.Duration(time.Since(startTime)))
 
 	return nil
 }
