@@ -13,67 +13,37 @@ limitations under the License.
 package helm
 
 import (
-	"bytes"
-	"strings"
-	"strconv"
 	"bufio"
+	"bytes"
+	"encoding/json"
+	"github.com/gemalto/helm-spray/internal/log"
 	"io/ioutil"
-	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"regexp"
-	"encoding/json"
+	"runtime"
+	"strconv"
+	"strings"
 )
 
-
 // Types returned by some of the functions
-type HelmStatus struct {
-	Namespace string
-	Status string
-	Resources string
-	Deployments []string
+type Status struct {
+	Namespace    string
+	Status       string
+	Resources    string
+	Deployments  []string
 	StatefulSets []string
-	Jobs []string
+	Jobs         []string
 }
 
-type HelmRelease struct {
-	Name			string
-	Revision		int
-	Updated			string
-	Status			string
-	Chart			string
-	AppVersion		string
-	Namespace		string
-}
-
-
-// Printing error or outputs
-func printError(err error) {
-	if err != nil {
-		os.Stderr.WriteString(fmt.Sprintf("==> Error: %s\n", err.Error()))
-		os.Exit(1)
-	}
-}
-
-func printOutput(outs []byte) {
-	if len(outs) > 0 {
-		fmt.Printf("==> Output: %s\n", string(outs))
-	}
-}
-
-// Utility functions to parse strings
-func getStringAfterFirst(value string, a string) string {
-	// Get substring after a string.
-	pos := strings.Index(value, a)
-	if pos == -1 {
-		return ""
-	}
-	adjustedPos := pos + len(a)
-	if adjustedPos >= len(value) {
-		return ""
-	}
-	return value[adjustedPos:len(value)]
+type Release struct {
+	Name       string `json:"name"`
+	Revision   string `json:"revision"`
+	Updated    string `json:"updated"`
+	Status     string `json:"status"`
+	Chart      string `json:"chart"`
+	AppVersion string `json:"app_version"`
+	Namespace  string `json:"namespace"`
 }
 
 func getStringAfterLast(value string, a string) string {
@@ -86,7 +56,7 @@ func getStringAfterLast(value string, a string) string {
 	if adjustedPos >= len(value) {
 		return ""
 	}
-	return value[adjustedPos:len(value)]
+	return value[adjustedPos:]
 }
 
 func getStringBetween(value string, a string, b string) string {
@@ -105,166 +75,113 @@ func getStringBetween(value string, a string, b string) string {
 	return value[posFirstAdjusted:posLastAdjusted]
 }
 
-// Parse the "helm status"-like output to extract releant information
+// Parse the "helm status"-like output to extract relevant information
 // WARNING: this code has been developed and tested with version 'v2.12.2' of Helm
 //          it may need to be adapted to other versions of Helm.
-func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
-	var out_str = string(outs)
+func parseStatusOutput(outs []byte, helmstatus *Status) {
+	var outStr = string(outs)
 
 	// Extract the namespace
-	var namespace = regexp.MustCompile(`NAMESPACE: (.*)`)
-	result := namespace.FindStringSubmatch(out_str)
-	if len(result) > 0 {
-		helmstatus.Namespace = string(result[1])
+	var namespace = regexp.MustCompile(`(?m)^NAMESPACE: (.*)$`)
+	result := namespace.FindStringSubmatch(outStr)
+	if len(result) > 1 {
+		helmstatus.Namespace = result[1]
 	}
 
 	// Extract the status
-	var status = regexp.MustCompile(`STATUS: (.*)`)
-	result = status.FindStringSubmatch(out_str)
-	if len(result) > 0 {
-		helmstatus.Status = string(result[1])
+	var status = regexp.MustCompile(`(?m)^STATUS: (.*)$`)
+	result = status.FindStringSubmatch(outStr)
+	if len(result) > 1 {
+		helmstatus.Status = result[1]
 	}
 
 	// Extract the resources
-	helmstatus.Resources = getStringAfterLast (out_str, "RESOURCES:")
+	helmstatus.Resources = getStringAfterLast(outStr, "RESOURCES:")
 
 	// ... and get the Deployments from the resources
-	var res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Deployment", "==>") + "\n" + 
-				getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/Deployment", "==>") + "\n" + 
-				getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/Deployment", "==>")
-	var res_as_slice = make([]string, 0)
+	var res = getStringBetween(helmstatus.Resources+"==>", "==> v1/Deployment", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta2/Deployment", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta1/Deployment", "==>")
+	var resAsSlice = make([]string, 0)
 	var scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
-		if len (scanner.Text()) > 0 {
+		if len(scanner.Text()) > 0 {
 			name := strings.Fields(scanner.Text())[0]
-			res_as_slice = append (res_as_slice, name)
+			resAsSlice = append(resAsSlice, name)
 		}
 	}
-	if len(res_as_slice) > 0 {
-		helmstatus.Deployments = res_as_slice[1:]
+	if len(resAsSlice) > 0 {
+		helmstatus.Deployments = resAsSlice[1:]
 	}
 
 	// ... and get the StatefulSets from the resources
-	res = getStringBetween (helmstatus.Resources + "==>", "==> v1/StatefulSet", "==>") + "\n" + 
-			getStringBetween (helmstatus.Resources + "==>", "==> v1beta2/StatefulSet", "==>") + "\n" + 
-			getStringBetween (helmstatus.Resources + "==>", "==> v1beta1/StatefulSet", "==>")
+	res = getStringBetween(helmstatus.Resources+"==>", "==> v1/StatefulSet", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta2/StatefulSet", "==>") + "\n" +
+		getStringBetween(helmstatus.Resources+"==>", "==> v1beta1/StatefulSet", "==>")
 
-	res_as_slice = make([]string, 0)
+	resAsSlice = make([]string, 0)
 	scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
-		if len (scanner.Text()) > 0 {
+		if len(scanner.Text()) > 0 {
 			name := strings.Fields(scanner.Text())[0]
-			res_as_slice = append (res_as_slice, name)
+			resAsSlice = append(resAsSlice, name)
 		}
 	}
-	if len(res_as_slice) > 0 {
-		helmstatus.StatefulSets = res_as_slice[1:]
+	if len(resAsSlice) > 0 {
+		helmstatus.StatefulSets = resAsSlice[1:]
 	}
 
 	// ... and get the Jobs from the resources
-	res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Job", "==>")
-	res_as_slice = make([]string, 0)
+	res = getStringBetween(helmstatus.Resources+"==>", "==> v1/Job", "==>")
+	resAsSlice = make([]string, 0)
 	scanner = bufio.NewScanner(strings.NewReader(res))
 	for scanner.Scan() {
-		if len (scanner.Text()) > 0 {
+		if len(scanner.Text()) > 0 {
 			name := strings.Fields(scanner.Text())[0]
-			res_as_slice = append (res_as_slice, name)
+			resAsSlice = append(resAsSlice, name)
 		}
 	}
-	if len(res_as_slice) > 0 {
-		helmstatus.Jobs = res_as_slice[1:]
+	if len(resAsSlice) > 0 {
+		helmstatus.Jobs = resAsSlice[1:]
 	}
 }
-
 
 // Helm functions calls
 // --------------------
 
-// Version ...
-func Version() {
-	fmt.Print("helm version: ")
-	cmd := exec.Command("helm", "version", "--client", "--short")
+// List ...
+func List(namespace string) (map[string]Release, error) {
+	helmlist := make(map[string]Release, 0)
+
+	// Get the list of Releases of the chunk
+	cmd := exec.Command("helm", "list", "--namespace", namespace, "-o", "json")
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
-	if err := cmd.Run(); err != nil {
-		printError(err)
-		os.Exit(1)
-	}
-	output := cmdOutput.Bytes()
-	printOutput(output)
-}
-
-// List ...
-type helmReleasesList struct {
-	Next			string
-	Releases		[]HelmRelease
-}
-
-func List(namespace string) map[string]HelmRelease {
-	helmlist := make(map[string]HelmRelease, 0)
-	next := "~FIRST"
-
-	// Loop on the chunks returned by the "helm list" command
-	for next != "" {
-		if next == "~FIRST" {
-			next = ""
-		}
-
-		// Get the list of Releases of the chunk
-		cmd := exec.Command("helm", "list", "--namespace", namespace, "-c", "--output", "json", "-o", next)
-		cmdOutput := &bytes.Buffer{}
-		cmd.Stdout = cmdOutput
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			printError(err)
-			os.Exit(1)
-		}
-
-		// Transform the received json into structs
-		output := cmdOutput.Bytes()
-		// In case Spray has been launched in debug mode, then leading messages are polluting the output. Removing them until the starting "{"
-		outputWithoutLeadingDebugMessages := "{" + getStringAfterFirst (string(output), "{")
-		var releases helmReleasesList
-		json.Unmarshal([]byte(outputWithoutLeadingDebugMessages), &releases)
-
-		// Add the Releases into a map
-		for _, r := range releases.Releases {
-			helmlist[r.Name] = r
-		}
-
-		// Loop on next chunk
-		next = releases.Next
-	}
-
-	return helmlist
-}
-
-// ListAll ...
-func ListAll() map[string]HelmRelease {
-	return List ("")
-}
-
-// Delete chart
-func Delete(chart string, dryRun bool) {
-	var myargs []string
-	if dryRun {
-		myargs = []string{"helm", "delete", "--purge", chart, "--dry-run"}
-	} else {
-		myargs = []string{"delete", "--purge", chart}
-	}
-	cmd := exec.Command("helm", myargs...)
-	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		printError(err)
-		os.Exit(1)
+		return nil, err
 	}
+
+	// Transform the received json into structs
+	output := cmdOutput.Bytes()
+	var releases []Release
+	err := json.Unmarshal(output, &releases)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add the Releases into a map
+	for _, r := range releases {
+		helmlist[r.Name] = r
+	}
+
+	return helmlist, nil
 }
 
 // UpgradeWithValues ...
-func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string, force bool, timeout int, dryRun bool, debug bool) HelmStatus {
+func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string, force bool, timeout int, dryRun bool, debug bool) (Status, error) {
 	// Prepare parameters...
-	var myargs []string = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout)}
+	var myargs = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout) + "s"}
 
 	for _, v := range valuesSet {
 		myargs = append(myargs, "--set")
@@ -296,7 +213,7 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	}
 	if debug {
 		myargs = append(myargs, "--debug")
-		fmt.Printf("[spray] running helm command for \"%s\": %v\n", releaseName, myargs)
+		log.Info(1, "running helm command for \"%s\": %v\n", releaseName, myargs)
 	}
 
 	// Run the upgrade command
@@ -309,85 +226,25 @@ func UpgradeWithValues(namespace string, releaseName string, chartPath string, r
 	output := cmdOutput.Bytes()
 
 	if debug {
-		fmt.Printf(string(output))
+		log.Info(1, "helm command for \"%s\" returned: \n%s\n", releaseName, string(output))
 	}
 	if err != nil {
-		printError(err)
-		os.Exit(1)
+		return Status{}, err
 	}
 
 	// Parse the ending helm status.
-	helmstatus := HelmStatus{}
-	parseStatusOutput(output, &helmstatus)
-	return helmstatus
-}
-
-// Template ...
-func Template(chartPath string, fileToExecute string, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string) string {
-	// Prepare parameters...
-	var myargs []string = []string{"template", chartPath, "--debug"}
-
-	if fileToExecute != "" {
-		myargs = append(myargs, "--execute")
-		myargs = append(myargs, fileToExecute)
-	}
-
-	for _, v := range valuesSet {
-		myargs = append(myargs, "--set")
-		myargs = append(myargs, v)
-	}
-	for _, v := range valuesSetString {
-		myargs = append(myargs, "--set-string")
-		myargs = append(myargs, v)
-	}
-	for _, v := range valuesSetFile {
-		myargs = append(myargs, "--set-file")
-		myargs = append(myargs, v)
-	}
-	for _, v := range valueFiles {
-		myargs = append(myargs, "-f")
-		myargs = append(myargs, v)
-	}
-
-	// Run the template command
-	cmd := exec.Command("helm", myargs...)
-
-	cmdOutput := &bytes.Buffer{}
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = cmdOutput
-	err := cmd.Run()
-	output := cmdOutput.Bytes()
-
-	if err != nil {
-		printError(err)
-		os.Exit(1)
-	}
-
-	return string(output)
-}
-
-// Status ...
-func Status(chart string) HelmStatus {
-	cmd := exec.Command("helm", "status", chart)
-	cmdOutput := &bytes.Buffer{}
-	cmd.Stdout = cmdOutput
-	if err := cmd.Run(); err != nil {
-		printError(err)
-		os.Exit(1)
-	}
-	output := cmdOutput.Bytes()
-	helmstatus := HelmStatus{}
-	parseStatusOutput(output, &helmstatus)
-	return helmstatus
+	status := Status{}
+	parseStatusOutput(output, &status)
+	return status, nil
 }
 
 // Fetch ...
-func Fetch(chart string, version string) string {
+func Fetch(chart string, version string) (string, error) {
 	tempDir, err := ioutil.TempDir("", "spray-")
 	if err != nil {
-		printError(err)
+		return "", err
 	}
-	defer os.RemoveAll(tempDir)
+	defer removeTempDir(tempDir)
 
 	var command string
 	var cmd *exec.Cmd
@@ -399,10 +256,8 @@ func Fetch(chart string, version string) string {
 			command = "helm fetch " + chart + " --destination " + tempDir
 		}
 		command = command + " && dir /b " + tempDir + " && copy " + tempDir + "\\* ."
-
 		cmd = exec.Command("cmd", "/C", command)
 		endOfLine = "\r\n"
-
 	} else {
 		if version != "" {
 			command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
@@ -410,7 +265,6 @@ func Fetch(chart string, version string) string {
 			command = "helm fetch " + chart + " --destination " + tempDir
 		}
 		command = command + " && ls " + tempDir + " && cp " + tempDir + "/* ."
-
 		cmd = exec.Command("sh", "-c", command)
 		endOfLine = "\n"
 	}
@@ -419,13 +273,17 @@ func Fetch(chart string, version string) string {
 	cmd.Stdout = cmdOutput
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		printError(err)
-		os.Exit(1)
+		return "", err
 	}
 
 	output := cmdOutput.Bytes()
-	var output_str = string(output)
-	var result = strings.Split (output_str, endOfLine)
-	return result[0]
+	var outputStr = string(output)
+	var result = strings.Split(outputStr, endOfLine)
+	return result[0], nil
 }
 
+func removeTempDir(tempDir string) {
+	if err := os.RemoveAll(tempDir); err != nil {
+		log.Error("Unable to remove temporary directory: %s", err)
+	}
+}
