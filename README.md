@@ -13,12 +13,28 @@ Chart weight shall be specified using the `<chart name>.weight` value.
 
 Each sub-chart is deployed under a specific Release named `<chart name or alias>`, enabling a later individual upgrade targeting this sub-chart only. All global or individual upgrade should still be done on the umbrella chart.
 
+## Compatibility with helm
+- helm-spray v3.x releases are only compatible with helm v2.x
+- helm-spray v4.x releases are only compatible with helm v3.x
 
 ## Continuous Integration & Delivery
 
 Helm Spray is building and delivering under Travis.
 
 [![Build Status](https://travis-ci.org/ThalesGroup/helm-spray.svg?branch=master)](https://travis-ci.org/ThalesGroup/helm-spray)
+
+## How to install (starting from v4)
+
+```
+-bash-4.2$ helm plugin install https://github.com/ThalesGroup/helm-spray
+Downloading and installing spray v4.0.0...
+Installed plugin: spray
+-bash-4.2$ helm plugin list
+NAME    VERSION DESCRIPTION
+spray   4.0.0   Helm plugin for upgrading sub-charts from umbrella chart with dependency orders
+```
+
+Please note the helm plugin install command requires git
 
 ## Usage
 
@@ -182,13 +198,11 @@ First, set up your environment:
 - If you don't have [Glide](http://glide.sh) installed, this will install it into
   `$GOPATH/bin` for you.
 
-Clone this repo into your `$GOPATH`. You can use `go get -d github.com/gemalto/helm-spray`
+Clone this repo into your `$GOPATH`. You can use `go get -d github.com/ThalesGroup/helm-spray`
 for that.
 
 ```
-$ cd $GOPATH/src/github.com/gemalto/helm-spray
+$ cd $GOPATH/src/github.com/ThalesGroup/helm-spray
 $ make dist_linux
 $ helm plugin install .
 ```
-
-
