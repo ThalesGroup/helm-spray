@@ -19,6 +19,18 @@ import (
 	"strings"
 )
 
+func GetDeployments(namespace string) ([]string, error) {
+	return getWorkloads("deployments", namespace)
+}
+
+func GetStatefulSets(namespace string) ([]string, error) {
+	return getWorkloads("statefulsets", namespace)
+}
+
+func GetJobs(namespace string) ([]string, error) {
+	return getWorkloads("jobs", namespace)
+}
+
 func AreDeploymentsReady(names []string, namespace string, debug bool) (bool, error) {
 	return areWorkloadsReady("deployment", names, namespace, debug)
 }
@@ -50,6 +62,17 @@ func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func getWorkloads(k8sObjectType string, namespace string) ([]string, error) {
+	cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "--output=jsonpath={.items..metadata.name}")
+	cmd.Stderr = os.Stderr
+	result, err := cmd.Output()
+	if err != nil {
+		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "" in any case.
+		return nil, err
+	}
+	return strings.Split(string(result), " "), nil
 }
 
 func areWorkloadsReady(k8sObjectType string, names []string, namespace string, debug bool) (bool, error) {

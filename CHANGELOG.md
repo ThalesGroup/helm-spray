@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 4.0.1 - 06/18/2020
+* Fixed [`#55`](https://github.com/ThalesGroup/helm-spray/issues/55)
+
+## Version 4.0.0 - 06/11/2020
+* Bump to helm v3 (this version is NOT compatible with helm v2)
+
 ## Version 3.4.6 - 03/20/2020
 * Plugin installation via helm plugin install is now possible
 

@@ -10,10 +10,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package main
+package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"github.com/gemalto/helm-spray/internal/dependencies"
@@ -50,6 +49,9 @@ type sprayCmd struct {
 	dryRun                      bool
 	verbose                     bool
 	debug                       bool
+	deployments                 map[string]struct{}
+	statefulsets                map[string]struct{}
+	jobs                        map[string]struct{}
 }
 
 var (
@@ -98,7 +100,7 @@ charts in a repository, use 'helm search'.
 
 var version = "SNAPSHOT"
 
-func newSprayCmd() *cobra.Command {
+func NewRootCmd() *cobra.Command {
 
 	p := &sprayCmd{}
 
@@ -280,16 +282,42 @@ func (p *sprayCmd) spray() error {
 		return fmt.Errorf("checking targets and excludes: %w", err)
 	}
 
+	p.deployments = map[string]struct{}{}
+	p.statefulsets = map[string]struct{}{}
+	p.jobs = map[string]struct{}{}
+
+	allDeployments, err := kubectl.GetDeployments(p.namespace)
+	if err != nil {
+		return errors.New("cannot list deployments")
+	}
+	allStatefulSets, err := kubectl.GetStatefulSets(p.namespace)
+	if err != nil {
+		return errors.New("cannot list statefulsets")
+	}
+	allJobs, err := kubectl.GetJobs(p.namespace)
+	if err != nil {
+		return errors.New("cannot list jobs")
+	}
+
+	for _, deployment := range allDeployments {
+		p.deployments[deployment] = struct{}{}
+	}
+	for _, statefulSet := range allStatefulSets {
+		p.statefulsets[statefulSet] = struct{}{}
+	}
+	for _, job := range allJobs {
+		p.jobs[job] = struct{}{}
+	}
+
 	// Loop on the increasing weight
 	for i := 0; i <= maxWeight(deps); i++ {
-		statuses := make([]helm.Status, 0)
-		shouldWait, err := upgrade(statuses, releases, deps, i, p)
+		shouldWait, err := p.upgrade(releases, deps, i)
 		if err != nil {
 			return err
 		}
 		// Wait availability of the just upgraded Releases
 		if shouldWait && !p.dryRun {
-			err = wait(statuses, p)
+			err = p.wait()
 			if err != nil {
 				return err
 			}
@@ -301,7 +329,7 @@ func (p *sprayCmd) spray() error {
 	return nil
 }
 
-func upgrade(statuses []helm.Status, releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int, p *sprayCmd) (bool, error) {
+func (p *sprayCmd) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int) (bool, error) {
 	shouldWait := false
 	firstInWeight := true
 	// Upgrade the targeted Deployments corresponding the the current weight
@@ -355,19 +383,11 @@ func upgrade(statuses []helm.Status, releases map[string]helm.Release, deps []de
 				if err != nil {
 					return false, fmt.Errorf("calling helm upgrade: %w", err)
 				}
-				statuses = append(statuses, helmstatus)
 
 				log.Info(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
 
 				if p.verbose {
 					log.Info(3, "helm status: %s", helmstatus.Status)
-					log.Info(3, "helm resources:")
-					var scanner = bufio.NewScanner(strings.NewReader(helmstatus.Resources))
-					for scanner.Scan() {
-						if len(scanner.Text()) > 0 {
-							log.Info(4, scanner.Text())
-						}
-					}
 				}
 
 				if !p.dryRun && helmstatus.Status != "deployed" {
@@ -379,8 +399,40 @@ func upgrade(statuses []helm.Status, releases map[string]helm.Release, deps []de
 	return shouldWait, nil
 }
 
-func wait(statuses []helm.Status, p *sprayCmd) error {
+func (p *sprayCmd) wait() error {
 	log.Info(2, "waiting for liveness and readiness...")
+
+	allDeployments, err := kubectl.GetDeployments(p.namespace)
+	if err != nil {
+		return errors.New("cannot list deployments")
+	}
+	allStatefulSets, err := kubectl.GetStatefulSets(p.namespace)
+	if err != nil {
+		return errors.New("cannot list statefulsets")
+	}
+	allJobs, err := kubectl.GetJobs(p.namespace)
+	if err != nil {
+		return errors.New("cannot list jobs")
+	}
+
+	deployments := make([]string, 0)
+	for _, deployment := range allDeployments {
+		if _, ok := p.deployments[deployment]; !ok {
+			deployments = append(deployments, deployment)
+		}
+	}
+	statefulSets := make([]string, 0)
+	for _, statefulset := range allStatefulSets {
+		if _, ok := p.statefulsets[statefulset]; !ok {
+			statefulSets = append(statefulSets, statefulset)
+		}
+	}
+	jobs := make([]string, 0)
+	for _, job := range allJobs {
+		if _, ok := p.jobs[job]; !ok {
+			jobs = append(jobs, job)
+		}
+	}
 
 	sleepTime := 5
 	doneDeployments := false
@@ -389,9 +441,6 @@ func wait(statuses []helm.Status, p *sprayCmd) error {
 
 	// Wait for completion of the Deployments/StatefulSets/Jobs
 	for i := 0; i < p.timeout; {
-		deployments := deployments(statuses)
-		statefulSets := statefulSets(statuses)
-		jobs := jobs(statuses)
 		if len(deployments) > 0 && !doneDeployments {
 			if p.verbose {
 				log.Info(3, "waiting for Deployments %v", deployments)
@@ -426,31 +475,18 @@ func wait(statuses []helm.Status, p *sprayCmd) error {
 	if !doneDeployments || !doneStatefulSets || !doneJobs {
 		return errors.New("timed out waiting for liveness and readiness")
 	}
+
+	for _, deployment := range deployments {
+		p.deployments[deployment] = struct{}{}
+	}
+	for _, statefulSet := range statefulSets {
+		p.statefulsets[statefulSet] = struct{}{}
+	}
+	for _, job := range jobs {
+		p.jobs[job] = struct{}{}
+	}
+
 	return nil
-}
-
-func deployments(helmStatuses []helm.Status) []string {
-	deployments := make([]string, 0)
-	for _, status := range helmStatuses {
-		deployments = append(deployments, status.Deployments...)
-	}
-	return deployments
-}
-
-func statefulSets(helmStatuses []helm.Status) []string {
-	statefulSets := make([]string, 0)
-	for _, status := range helmStatuses {
-		statefulSets = append(statefulSets, status.StatefulSets...)
-	}
-	return statefulSets
-}
-
-func jobs(helmStatuses []helm.Status) []string {
-	jobs := make([]string, 0)
-	for _, status := range helmStatuses {
-		jobs = append(jobs, status.Jobs...)
-	}
-	return jobs
 }
 
 // Retrieve the highest chart.weight in values.yaml
@@ -539,12 +575,5 @@ func removeTempDir(tempDir string) {
 func removeTempFile(tempFile string) {
 	if err := os.Remove(tempFile); err != nil {
 		log.Error("Error: removing temporary file: %s", err)
-	}
-}
-
-func main() {
-	cmd := newSprayCmd()
-	if err := cmd.Execute(); err != nil {
-		os.Exit(1)
 	}
 }

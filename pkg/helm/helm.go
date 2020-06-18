@@ -13,7 +13,6 @@ limitations under the License.
 package helm
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"github.com/gemalto/helm-spray/internal/log"
@@ -28,12 +27,8 @@ import (
 
 // Types returned by some of the functions
 type Status struct {
-	Namespace    string
-	Status       string
-	Resources    string
-	Deployments  []string
-	StatefulSets []string
-	Jobs         []string
+	Namespace string
+	Status    string
 }
 
 type Release struct {
@@ -46,37 +41,8 @@ type Release struct {
 	Namespace  string `json:"namespace"`
 }
 
-func getStringAfterLast(value string, a string) string {
-	// Get substring after a string.
-	pos := strings.LastIndex(value, a)
-	if pos == -1 {
-		return ""
-	}
-	adjustedPos := pos + len(a)
-	if adjustedPos >= len(value) {
-		return ""
-	}
-	return value[adjustedPos:]
-}
-
-func getStringBetween(value string, a string, b string) string {
-	// Get substring between two strings.
-	posFirst := strings.Index(value, a)
-	if posFirst == -1 {
-		return ""
-	}
-
-	posFirstAdjusted := posFirst + len(a)
-	posLast := strings.Index(value[posFirstAdjusted:], b)
-	if posLast == -1 {
-		return ""
-	}
-	posLastAdjusted := posFirstAdjusted + posLast
-	return value[posFirstAdjusted:posLastAdjusted]
-}
-
 // Parse the "helm status"-like output to extract relevant information
-// WARNING: this code has been developed and tested with version 'v2.12.2' of Helm
+// WARNING: this code has been developed and tested with version 'v3.2.4' of Helm
 //          it may need to be adapted to other versions of Helm.
 func parseStatusOutput(outs []byte, helmstatus *Status) {
 	var outStr = string(outs)
@@ -93,56 +59,6 @@ func parseStatusOutput(outs []byte, helmstatus *Status) {
 	result = status.FindStringSubmatch(outStr)
 	if len(result) > 1 {
 		helmstatus.Status = result[1]
-	}
-
-	// Extract the resources
-	helmstatus.Resources = getStringAfterLast(outStr, "RESOURCES:")
-
-	// ... and get the Deployments from the resources
-	var res = getStringBetween(helmstatus.Resources+"==>", "==> v1/Deployment", "==>") + "\n" +
-		getStringBetween(helmstatus.Resources+"==>", "==> v1beta2/Deployment", "==>") + "\n" +
-		getStringBetween(helmstatus.Resources+"==>", "==> v1beta1/Deployment", "==>")
-	var resAsSlice = make([]string, 0)
-	var scanner = bufio.NewScanner(strings.NewReader(res))
-	for scanner.Scan() {
-		if len(scanner.Text()) > 0 {
-			name := strings.Fields(scanner.Text())[0]
-			resAsSlice = append(resAsSlice, name)
-		}
-	}
-	if len(resAsSlice) > 0 {
-		helmstatus.Deployments = resAsSlice[1:]
-	}
-
-	// ... and get the StatefulSets from the resources
-	res = getStringBetween(helmstatus.Resources+"==>", "==> v1/StatefulSet", "==>") + "\n" +
-		getStringBetween(helmstatus.Resources+"==>", "==> v1beta2/StatefulSet", "==>") + "\n" +
-		getStringBetween(helmstatus.Resources+"==>", "==> v1beta1/StatefulSet", "==>")
-
-	resAsSlice = make([]string, 0)
-	scanner = bufio.NewScanner(strings.NewReader(res))
-	for scanner.Scan() {
-		if len(scanner.Text()) > 0 {
-			name := strings.Fields(scanner.Text())[0]
-			resAsSlice = append(resAsSlice, name)
-		}
-	}
-	if len(resAsSlice) > 0 {
-		helmstatus.StatefulSets = resAsSlice[1:]
-	}
-
-	// ... and get the Jobs from the resources
-	res = getStringBetween(helmstatus.Resources+"==>", "==> v1/Job", "==>")
-	resAsSlice = make([]string, 0)
-	scanner = bufio.NewScanner(strings.NewReader(res))
-	for scanner.Scan() {
-		if len(scanner.Text()) > 0 {
-			name := strings.Fields(scanner.Text())[0]
-			resAsSlice = append(resAsSlice, name)
-		}
-	}
-	if len(resAsSlice) > 0 {
-		helmstatus.Jobs = resAsSlice[1:]
 	}
 }
 

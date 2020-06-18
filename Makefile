@@ -13,12 +13,12 @@ dist: dist_linux dist_windows
 dist_linux:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=amd64 go get -t -v ./...
-	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY_LINUX) -ldflags $(LDFLAGS) cmd/helmspray/main.go
+	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY_LINUX) -ldflags $(LDFLAGS) main.go
 	tar -czvf $(DIST)/$(TAR_LINUX) bin README.md LICENSE plugin.yaml
 
 .PHONY: dist_windows
 dist_windows:
 	mkdir -p $(DIST)
 	GOOS=windows GOARCH=amd64 go get -t -v ./...
-	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY_WINDOWS) -ldflags $(LDFLAGS) cmd/helmspray/main.go
+	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY_WINDOWS) -ldflags $(LDFLAGS) main.go
 	tar -czvf $(DIST)/${TAR_WINDOWS} bin README.md LICENSE plugin.yaml
