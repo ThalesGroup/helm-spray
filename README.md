@@ -36,6 +36,11 @@ spray   4.0.0   Helm plugin for upgrading sub-charts from umbrella chart with de
 
 Please note the helm plugin install command requires git
 
+## Pre-requisites
+
+Helm Spray is using kubectl to communicate with Kubernetes cluster.
+Please follow this [page](https://kubernetes.io/docs/tasks/tools/install-kubectl) to install it
+
 ## Usage
 
 ```
