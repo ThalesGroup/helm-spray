@@ -63,7 +63,20 @@ func printOutput(outs []byte) {
 }
 
 // Utility functions to parse strings
-func getStringAfter(value string, a string) string {
+func getStringAfterFirst(value string, a string) string {
+	// Get substring after a string.
+	pos := strings.Index(value, a)
+	if pos == -1 {
+		return ""
+	}
+	adjustedPos := pos + len(a)
+	if adjustedPos >= len(value) {
+		return ""
+	}
+	return value[adjustedPos:len(value)]
+}
+
+func getStringAfterLast(value string, a string) string {
 	// Get substring after a string.
 	pos := strings.LastIndex(value, a)
 	if pos == -1 {
@@ -113,7 +126,7 @@ func parseStatusOutput(outs []byte, helmstatus *HelmStatus) {
 	}
 
 	// Extract the resources
-	helmstatus.Resources = getStringAfter (out_str, "RESOURCES:")
+	helmstatus.Resources = getStringAfterLast (out_str, "RESOURCES:")
 
 	// ... and get the Deployments from the resources
 	var res = getStringBetween (helmstatus.Resources + "==>", "==> v1/Deployment", "==>") + "\n" + 
@@ -209,8 +222,11 @@ func List(namespace string) map[string]HelmRelease {
 
 		// Transform the received json into structs
 		output := cmdOutput.Bytes()
+		// In case Spray has been launched in debug mode, then leading messages are polluting the output. Removing them until the starting "{"
+		outputWithoutLeadingDebugMessages := "{" + getStringAfterFirst (string(output), "{")
+
 		var releases helmReleasesList
-		json.Unmarshal([]byte(output), &releases)
+		json.Unmarshal([]byte(outputWithoutLeadingDebugMessages), &releases)
 
 		// Add the Releases into a map
 		for _, r := range releases.Releases {
