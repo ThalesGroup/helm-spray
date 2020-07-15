@@ -1,5 +1,10 @@
 # Release Notes
 
+## Version 3.4.6 - 07/15/2020
+* Bugfix issues [`#43`](https://github.com/ThalesGroup/helm-spray/issues/43)
+* Bugfix issues [`#44`](https://github.com/ThalesGroup/helm-spray/issues/44)
+* Bugfix issues [`#58`](https://github.com/ThalesGroup/helm-spray/issues/58)
+
 ## Version 3.4.5 - 10/08/2019
 * Bugfix issues #39, #40 and #41 [`#42`](https://github.com/gemalto/helm-spray/pull/42) (Patrice Amiel)
 
