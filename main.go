@@ -552,16 +552,24 @@ func (p *sprayCmd) spray() error {
 					for _, ss := range status.StatefulSets {
 						done := false
 
-						for i := 0; i < p.timeout; {
+						if kubectl.GetStatefulSetStrategy(ss, p.namespace) == "OnDelete" {
 							if p.verbose {
-								log(3, "waiting for StatefulSet \"%s\"", ss)
+								log(3, "do not wait for StatefulSet \"%s\" as its update strategy is set to \"OnDelete\"", ss)
 							}
-							if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
-								done = true
-								break
+							done = true
+
+						} else {
+							for i := 0; i < p.timeout; {
+								if p.verbose {
+									log(3, "waiting for StatefulSet \"%s\"", ss)
+								}
+								if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
+									done = true
+									break
+								}
+								time.Sleep(time.Duration(sleep_time) * time.Second)
+								i = i + sleep_time
 							}
-							time.Sleep(time.Duration(sleep_time) * time.Second)
-							i = i + sleep_time
 						}
 
 						if !done {
@@ -786,9 +794,9 @@ func log(level int, str string, params ...interface{}) {
 func logWithNumberedLines(level int, str string, params ...interface{}) {
 	// Number of lines to be printed
 	numberOfLines := strings.Count(str, "\n")
-    if len(str) > 0 && !strings.HasSuffix(str, "\n") {
-        numberOfLines++
-    }
+	if len(str) > 0 && !strings.HasSuffix(str, "\n") {
+		numberOfLines++
+	}
 
 	// Compute the number of digits corresponding to this number of lines, so that the format of eachline is correct
 	numberOfDigits := 0

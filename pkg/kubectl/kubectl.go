@@ -14,6 +14,7 @@ package kubectl
 
 import (
 	"fmt"
+	"strings"
 	"os"
 	"os/exec"
 )
@@ -88,10 +89,10 @@ func IsDeploymentUpToDate(deployment string, namespace string) bool {
 }
 
 // IsStatefulSetUpToDate ...
-func IsStatefulSetUpToDate(deployment string, namespace string) bool {
-	desired := getDesired("statefulset", deployment, namespace)
-	ready := getReady("statefulset", deployment, namespace)
-	current := getStatefulsetCurrent(deployment, namespace)
+func IsStatefulSetUpToDate(statefulset string, namespace string) bool {
+	desired := getDesired("statefulset", statefulset, namespace)
+	ready := getReady("statefulset", statefulset, namespace)
+	current := getStatefulsetCurrent(statefulset, namespace)
 	if desired != ready {
 		return false
 	} else {
@@ -113,6 +114,16 @@ func IsJobCompleted(job string, namespace string) bool {
 	}
 }
 
+// GetStatefulSetStrategy
+func GetStatefulSetStrategy(statefulset string, namespace string) string {
+	s := getObjectDescriptionItem("statefulset", statefulset, namespace, ".spec.updateStrategy.type")
+//	if len(s) >= 2 {
+//		if s[0] == `'` && s[len(s)-1] == `'` {
+//			return s[1 : len(s)-1]
+//		}
+//	}
+	return strings.Trim(s, "'")
+}
 
 // Utility functions to get informations extracted from a 'kubectl get' command result
 func getObjectDescriptionItem(k8sObjectType string, objectName string, namespace string, itemJsonPath string) string {
