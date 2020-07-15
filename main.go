@@ -232,6 +232,9 @@ func (p *sprayCmd) spray() error {
 		// Load default values...
 		values, err = chartutil.CoalesceValues(chart, &chartHapi.Config{Raw: string(updatedDefaultValues)})
 		if err != nil {
+			if p.verbose {
+				logWithNumberedLines(1, updatedDefaultValues)
+			}
 			logErrorAndExit("Error processing default values for umbrella chart: %s", err)
 		}
 
@@ -549,16 +552,24 @@ func (p *sprayCmd) spray() error {
 					for _, ss := range status.StatefulSets {
 						done := false
 
-						for i := 0; i < p.timeout; {
+						if kubectl.GetStatefulSetStrategy(ss, p.namespace) == "OnDelete" {
 							if p.verbose {
-								log(3, "waiting for StatefulSet \"%s\"", ss)
+								log(3, "do not wait for StatefulSet \"%s\" as its update strategy is set to \"OnDelete\"", ss)
 							}
-							if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
-								done = true
-								break
+							done = true
+
+						} else {
+							for i := 0; i < p.timeout; {
+								if p.verbose {
+									log(3, "waiting for StatefulSet \"%s\"", ss)
+								}
+								if kubectl.IsStatefulSetUpToDate(ss, p.namespace) {
+									done = true
+									break
+								}
+								time.Sleep(time.Duration(sleep_time) * time.Second)
+								i = i + sleep_time
 							}
-							time.Sleep(time.Duration(sleep_time) * time.Second)
-							i = i + sleep_time
 						}
 
 						if !done {
@@ -773,12 +784,45 @@ func log(level int, str string, params ...interface{}) {
 		logStr = logStr + "        . "
 	}
 
-	fmt.Println(logStr + fmt.Sprintf(str, params...))
+	if len(params) != 0 {
+		fmt.Println(logStr + fmt.Sprintf(str, params...))
+	} else {
+		fmt.Println(logStr + str)
+	}
+}
+
+func logWithNumberedLines(level int, str string, params ...interface{}) {
+	// Number of lines to be printed
+	numberOfLines := strings.Count(str, "\n")
+	if len(str) > 0 && !strings.HasSuffix(str, "\n") {
+		numberOfLines++
+	}
+
+	// Compute the number of digits corresponding to this number of lines, so that the format of eachline is correct
+	numberOfDigits := 0
+	for numberOfLines != 0 {
+		numberOfLines /= 10
+		numberOfDigits = numberOfDigits + 1
+	}
+	format := "[%" + strconv.Itoa(numberOfDigits) + "d] %s"
+
+	// Print line by line
+	lineNbr := 0
+	scanner := bufio.NewScanner(strings.NewReader(str))
+	for scanner.Scan() {
+		log(level, fmt.Sprintf(format, lineNbr, scanner.Text()), params...)
+		lineNbr++
+	}
 }
 
 // Log error and exit
 func logErrorAndExit(str string, params ...interface{}) {
-	os.Stderr.WriteString(fmt.Sprintf(str + "\n", params...))
+	if len(params) != 0 {
+		os.Stderr.WriteString(fmt.Sprintf(str + "\n", params...))
+	} else {
+		os.Stderr.WriteString(str + "\n")
+	}
+
 	os.Exit(1)
 }
 
