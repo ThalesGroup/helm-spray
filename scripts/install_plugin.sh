@@ -6,7 +6,7 @@ os=$(uname)
 echo "Downloading and installing spray v${version} for ${os}..."
 
 url=""
-if [ "${os}" = "Linux" ] ; then
+if [ "${os}" == "Linux" ] ; then
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-linux-amd64.tar.gz"
 else
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-windows-amd64.tar.gz"
