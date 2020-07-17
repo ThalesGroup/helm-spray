@@ -2,10 +2,11 @@
 
 # shellcheck disable=SC2002
 version="$(cat plugin.yaml | grep "version" | cut -d ' ' -f 2)"
-echo "Downloading and installing spray v${version}..."
+os=$(uname)
+echo "Downloading and installing spray v${version} for ${os}..."
 
 url=""
-if [ "$(uname)" = "Linux" ] ; then
+if [ "${os}" = "Linux" ] ; then
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-linux-amd64.tar.gz"
 else
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-windows-amd64.tar.gz"
