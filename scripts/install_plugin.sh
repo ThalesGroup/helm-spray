@@ -23,8 +23,11 @@ else
     wget -q "${url}" -O "releases/v${version}.tar.gz"
 fi
 tar xzf "releases/v${version}.tar.gz" -C "releases/v${version}"
-mv "releases/v${version}/bin/helm-spray" "bin/helm-spray" || \
-    mv "releases/v${version}/bin/helm-spray.exe" "bin/helm-spray"
+if [ "${os}" == "Linux" ] ; then
+    mv "releases/v${version}/bin/helm-spray" "bin/helm-spray"
+else
+    mv "releases/v${version}/bin/helm-spray.exe" "bin/helm-spray.exe"
+fi
 mv "releases/v${version}/plugin.yaml" .
 mv "releases/v${version}/README.md" .
 mv "releases/v${version}/LICENSE" .
