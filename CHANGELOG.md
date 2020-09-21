@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.2 - 09/21/2020
+* Expose spray logic in a library module for external usage
+
 ## Version 4.0.1 - 06/18/2020
 * Fixed [`#55`](https://github.com/ThalesGroup/helm-spray/issues/55)
 

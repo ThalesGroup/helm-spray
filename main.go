@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/gemalto/helm-spray/cmd"
+	"github.com/gemalto/helm-spray/v4/cmd"
 	"os"
 )
 

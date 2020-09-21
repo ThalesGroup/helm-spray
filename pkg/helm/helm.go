@@ -15,7 +15,7 @@ package helm
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/gemalto/helm-spray/internal/log"
+	"github.com/gemalto/helm-spray/v4/internal/log"
 	"io/ioutil"
 	"os"
 	"os/exec"

@@ -15,44 +15,14 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/gemalto/helm-spray/internal/dependencies"
-	"github.com/gemalto/helm-spray/internal/log"
-	"github.com/gemalto/helm-spray/internal/values"
-	"github.com/gemalto/helm-spray/pkg/helm"
-	"github.com/gemalto/helm-spray/pkg/kubectl"
-	"github.com/gemalto/helm-spray/pkg/util"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	cliValues "helm.sh/helm/v3/pkg/cli/values"
-	"io/ioutil"
+	"github.com/gemalto/helm-spray/v4/internal/log"
+	"github.com/gemalto/helm-spray/v4/pkg/helm"
+	"github.com/gemalto/helm-spray/v4/pkg/helmspray"
 	"os"
-	"strconv"
 	"strings"
-	"text/tabwriter"
-	"time"
 
 	"github.com/spf13/cobra"
 )
-
-type sprayCmd struct {
-	chartName                   string
-	chartVersion                string
-	targets                     []string
-	excludes                    []string
-	namespace                   string
-	prefixReleases              string
-	prefixReleasesWithNamespace bool
-	resetValues                 bool
-	reuseValues                 bool
-	valuesOpts                  cliValues.Options
-	force                       bool
-	timeout                     int
-	dryRun                      bool
-	verbose                     bool
-	debug                       bool
-	deployments                 map[string]struct{}
-	statefulsets                map[string]struct{}
-	jobs                        map[string]struct{}
-}
 
 var (
 	globalUsage = `
@@ -102,7 +72,7 @@ var version = "SNAPSHOT"
 
 func NewRootCmd() *cobra.Command {
 
-	p := &sprayCmd{}
+	s := &helmspray.Spray{}
 
 	cmd := &cobra.Command{
 		Use:          "helm spray [CHART]",
@@ -117,463 +87,92 @@ func NewRootCmd() *cobra.Command {
 				return errors.New("this command accepts only 1 argument: chart name")
 			}
 
-			p.chartName = args[0]
+			s.ChartName = args[0]
 
-			if p.chartVersion != "" {
-				if strings.HasSuffix(p.chartName, "tgz") {
+			if s.ChartVersion != "" {
+				if strings.HasSuffix(s.ChartName, "tgz") {
 					return errors.New("cannot use --version together with chart archive")
 				}
 
-				if _, err := os.Stat(p.chartName); err == nil {
+				if _, err := os.Stat(s.ChartName); err == nil {
 					return errors.New("cannot use --version together with chart directory")
 				}
 
-				if strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://") {
+				if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
 					return errors.New("cannot use --version together with chart URL")
 				}
 			}
 
-			if p.prefixReleasesWithNamespace == true && p.prefixReleases != "" {
+			if s.PrefixReleasesWithNamespace == true && s.PrefixReleases != "" {
 				return errors.New("cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 
-			if len(p.targets) > 0 && len(p.excludes) > 0 {
+			if len(s.Targets) > 0 && len(s.Excludes) > 0 {
 				return errors.New("cannot use both --target and --exclude together")
 			}
 
 			// If chart is specified through an url, the fetch it from the url.
-			if strings.HasPrefix(p.chartName, "http://") || strings.HasPrefix(p.chartName, "https://") {
-				log.Info(1, "fetching chart from url \"%s\"...", p.chartName)
+			if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
+				log.Info(1, "fetching chart from url \"%s\"...", s.ChartName)
 				var err error
-				p.chartName, err = helm.Fetch(p.chartName, "")
+				s.ChartName, err = helm.Fetch(s.ChartName, "")
 				if err != nil {
-					return fmt.Errorf("fetching chart %s: %w", p.chartName, err)
+					return fmt.Errorf("fetching chart %s: %w", s.ChartName, err)
 				}
-			} else if _, err := os.Stat(p.chartName); err != nil {
+			} else if _, err := os.Stat(s.ChartName); err != nil {
 				// If local file (or directory) does not exist, then fetch it from a repo.
-				if p.chartVersion != "" {
-					log.Info(1, "fetching chart \"%s\" version \"%s\" from repos...", p.chartName, p.chartVersion)
+				if s.ChartVersion != "" {
+					log.Info(1, "fetching chart \"%s\" version \"%s\" from repos...", s.ChartName, s.ChartVersion)
 				} else {
-					log.Info(1, "fetching chart \"%s\" from repos...", p.chartName)
+					log.Info(1, "fetching chart \"%s\" from repos...", s.ChartName)
 				}
 				var err error
-				p.chartName, err = helm.Fetch(p.chartName, p.chartVersion)
+				s.ChartName, err = helm.Fetch(s.ChartName, s.ChartVersion)
 				if err != nil {
-					return fmt.Errorf("fetching chart %s with version %s: %w", p.chartName, p.chartVersion, err)
+					return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
 				}
 			} else {
-				log.Info(1, "processing chart from local file or directory \"%s\"...", p.chartName)
+				log.Info(1, "processing chart from local file or directory \"%s\"...", s.ChartName)
 			}
 
-			return p.spray()
+			return s.Spray()
 		},
 	}
 
 	f := cmd.Flags()
-	f.StringVarP(&p.chartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
-	f.StringSliceVarP(&p.targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted")
-	f.StringSliceVarP(&p.excludes, "exclude", "x", []string{}, "specify the subchart to exclude (can specify multiple): process all subcharts except the ones specified in '--exclude'")
-	f.StringVarP(&p.prefixReleases, "prefix-releases", "", "", "prefix the releases by the given string, resulting into releases names formats:\n    \"<prefix>-<chart name or alias>\"\nAllowed characters are a-z A-Z 0-9 and -")
-	f.BoolVar(&p.prefixReleasesWithNamespace, "prefix-releases-with-namespace", false, "prefix the releases by the name of the namespace, resulting into releases names formats:\n    \"<namespace>-<chart name or alias>\"")
-	f.BoolVar(&p.resetValues, "reset-values", false, "when upgrading, reset the values to the ones built into the chart")
-	f.BoolVar(&p.reuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.\nIf '--reset-values' is specified, this is ignored")
-	f.StringSliceVarP(&p.valuesOpts.ValueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
-	f.StringArrayVar(&p.valuesOpts.Values, "set", []string{}, "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
-	f.StringArrayVar(&p.valuesOpts.StringValues, "set-string", []string{}, "set STRING values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
-	f.StringArrayVar(&p.valuesOpts.FileValues, "set-file", []string{}, "set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)")
-	f.BoolVar(&p.force, "force", false, "force resource update through delete/recreate if needed")
-	f.IntVar(&p.timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)\nand for liveness and readiness (like Deployments and regular Jobs completion)")
-	f.BoolVar(&p.dryRun, "dry-run", false, "simulate a spray")
-	f.BoolVar(&p.verbose, "verbose", false, "enable spray verbose output")
-	f.BoolVar(&p.debug, "debug", false, "enable helm debug output (also include spray verbose output)")
+	f.StringVarP(&s.ChartVersion, "version", "", "", "specify the exact chart version to install. If this is not specified, the latest version is installed")
+	f.StringSliceVarP(&s.Targets, "target", "t", []string{}, "specify the subchart to target (can specify multiple). If '--target' is not specified, all subcharts are targeted")
+	f.StringSliceVarP(&s.Excludes, "exclude", "x", []string{}, "specify the subchart to exclude (can specify multiple): process all subcharts except the ones specified in '--exclude'")
+	f.StringVarP(&s.PrefixReleases, "prefix-releases", "", "", "prefix the releases by the given string, resulting into releases names formats:\n    \"<prefix>-<chart name or alias>\"\nAllowed characters are a-z A-Z 0-9 and -")
+	f.BoolVar(&s.PrefixReleasesWithNamespace, "prefix-releases-with-namespace", false, "prefix the releases by the name of the namespace, resulting into releases names formats:\n    \"<namespace>-<chart name or alias>\"")
+	f.BoolVar(&s.ResetValues, "reset-values", false, "when upgrading, reset the values to the ones built into the chart")
+	f.BoolVar(&s.ReuseValues, "reuse-values", false, "when upgrading, reuse the last release's values and merge in any overrides from the command line via '--set' and '-f'.\nIf '--reset-values' is specified, this is ignored")
+	f.StringSliceVarP(&s.ValuesOpts.ValueFiles, "values", "f", []string{}, "specify values in a YAML file or a URL (can specify multiple)")
+	f.StringArrayVar(&s.ValuesOpts.Values, "set", []string{}, "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
+	f.StringArrayVar(&s.ValuesOpts.StringValues, "set-string", []string{}, "set STRING values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
+	f.StringArrayVar(&s.ValuesOpts.FileValues, "set-file", []string{}, "set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)")
+	f.BoolVar(&s.Force, "force", false, "force resource update through delete/recreate if needed")
+	f.IntVar(&s.Timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)\nand for liveness and readiness (like Deployments and regular Jobs completion)")
+	f.BoolVar(&s.DryRun, "dry-run", false, "simulate a spray")
+	f.BoolVar(&s.Verbose, "verbose", false, "enable spray verbose output")
+	f.BoolVar(&s.Debug, "debug", false, "enable helm debug output (also include spray verbose output)")
 
 	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
 	helmDebug := os.Getenv("HELM_DEBUG")
 	if helmDebug == "1" || strings.EqualFold(helmDebug, "true") || strings.EqualFold(helmDebug, "on") {
-		p.debug = true
+		s.Debug = true
 	}
-	if p.debug {
-		p.verbose = true
+	if s.Debug {
+		s.Verbose = true
 	}
 
 	// When called through helm, namespace is transmitted through the HELM_NAMESPACE envvar
 	namespace := os.Getenv("HELM_NAMESPACE")
 	if len(namespace) > 0 {
-		p.namespace = namespace
+		s.Namespace = namespace
 	} else {
-		p.namespace = "default"
+		s.Namespace = "default"
 	}
 
 	return cmd
-}
-
-// Running Spray command
-func (p *sprayCmd) spray() error {
-
-	if p.debug {
-		log.Info(1, "starting spray with flags: %+v\n", p)
-	}
-
-	startTime := time.Now()
-
-	// Load and validate the umbrella chart...
-	chart, err := loader.Load(p.chartName)
-	if err != nil {
-		return fmt.Errorf("loading chart \"%s\": %w", p.chartName, err)
-	}
-
-	mergedValues, updatedChartValuesAsString, err := values.Merge(chart, p.reuseValues, &p.valuesOpts, p.verbose)
-	if err != nil {
-		return fmt.Errorf("merging values: %w", err)
-	}
-	if len(updatedChartValuesAsString) > 0 {
-		// Write default values to a temporary file and add it to the list of values files,
-		// for later usage during the calls to helm
-		tempDir, err := ioutil.TempDir("", "spray-")
-		if err != nil {
-			return fmt.Errorf("creating temporary directory to write updated default values file for umbrella chart: %w", err)
-		}
-		defer removeTempDir(tempDir)
-		tempFile, err := ioutil.TempFile(tempDir, "updatedDefaultValues-*.yaml")
-		if err != nil {
-			return fmt.Errorf("creating temporary file to write updated default values file for umbrella chart: %w", err)
-		}
-		defer removeTempFile(tempFile.Name())
-		if _, err = tempFile.Write([]byte(updatedChartValuesAsString)); err != nil {
-			return fmt.Errorf("writing updated default values file for umbrella chart into temporary file: %w", err)
-		}
-		err = tempFile.Close()
-		if err != nil {
-			return fmt.Errorf("closing temporary file to write updated default values file for umbrella chart: %w", err)
-		}
-		prependArray := []string{tempFile.Name()}
-		p.valuesOpts.ValueFiles = append(prependArray, p.valuesOpts.ValueFiles...)
-	}
-
-	releasePrefix := ""
-	if p.prefixReleasesWithNamespace && len(p.namespace) > 0 {
-		releasePrefix = p.namespace + "-"
-	} else if len(p.prefixReleases) > 0 {
-		releasePrefix = p.prefixReleases + "-"
-	}
-	deps, err := dependencies.Get(chart, &mergedValues, p.targets, p.excludes, releasePrefix, p.verbose)
-	if err != nil {
-		return fmt.Errorf("analyzing dependencies: %w", err)
-	}
-
-	// Starting the processing...
-	if len(releasePrefix) > 0 {
-		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases releasePrefix \"%s-\"", p.chartName, p.namespace, releasePrefix)
-	} else {
-		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\"", p.chartName, p.namespace)
-	}
-
-	releases, err := helm.List(p.namespace)
-	if err != nil {
-		return fmt.Errorf("listing releases: %w", err)
-	}
-
-	if p.verbose {
-		logRelease(releases, deps)
-	}
-
-	err = checkTargetsAndExcludes(deps, p.targets, p.excludes)
-	if err != nil {
-		return fmt.Errorf("checking targets and excludes: %w", err)
-	}
-
-	p.deployments = map[string]struct{}{}
-	p.statefulsets = map[string]struct{}{}
-	p.jobs = map[string]struct{}{}
-
-	allDeployments, err := kubectl.GetDeployments(p.namespace)
-	if err != nil {
-		return errors.New("cannot list deployments")
-	}
-	allStatefulSets, err := kubectl.GetStatefulSets(p.namespace)
-	if err != nil {
-		return errors.New("cannot list statefulsets")
-	}
-	allJobs, err := kubectl.GetJobs(p.namespace)
-	if err != nil {
-		return errors.New("cannot list jobs")
-	}
-
-	for _, deployment := range allDeployments {
-		p.deployments[deployment] = struct{}{}
-	}
-	for _, statefulSet := range allStatefulSets {
-		p.statefulsets[statefulSet] = struct{}{}
-	}
-	for _, job := range allJobs {
-		p.jobs[job] = struct{}{}
-	}
-
-	// Loop on the increasing weight
-	for i := 0; i <= maxWeight(deps); i++ {
-		shouldWait, err := p.upgrade(releases, deps, i)
-		if err != nil {
-			return err
-		}
-		// Wait availability of the just upgraded Releases
-		if shouldWait && !p.dryRun {
-			err = p.wait()
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	log.Info(1, "upgrade of solution chart \"%s\" completed in %s", p.chartName, util.Duration(time.Since(startTime)))
-
-	return nil
-}
-
-func (p *sprayCmd) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int) (bool, error) {
-	shouldWait := false
-	firstInWeight := true
-	// Upgrade the targeted Deployments corresponding the the current weight
-	for _, dependency := range deps {
-		if dependency.Targeted && dependency.AllowedByTags == true {
-			if dependency.Weight == currentWeight {
-				if firstInWeight {
-					log.Info(1, "processing sub-charts of weight %d", dependency.Weight)
-					firstInWeight = false
-				}
-
-				if release, ok := releases[dependency.CorrespondingReleaseName]; ok {
-					oldRevision, _ := strconv.Atoi(release.Revision)
-					log.Info(2, "upgrading release \"%s\": going from revision %d (status %s) to %d (appVersion %s)...", dependency.CorrespondingReleaseName, oldRevision, release.Status, oldRevision+1, dependency.AppVersion)
-
-				} else {
-					log.Info(2, "upgrading release \"%s\": deploying first revision (appVersion %s)...", dependency.CorrespondingReleaseName, dependency.AppVersion)
-				}
-
-				shouldWait = true
-
-				// Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
-				depValuesSet := ""
-				for _, dep := range deps {
-					if dep.UsedName == dependency.UsedName {
-						depValuesSet = depValuesSet + dep.UsedName + ".enabled=true,"
-					} else {
-						depValuesSet = depValuesSet + dep.UsedName + ".enabled=false,"
-					}
-				}
-				var valuesSet []string
-				valuesSet = append(valuesSet, p.valuesOpts.Values...)
-				valuesSet = append(valuesSet, depValuesSet)
-
-				// Upgrade the Deployment
-				helmstatus, err := helm.UpgradeWithValues(
-					p.namespace,
-					dependency.CorrespondingReleaseName,
-					p.chartName,
-					p.resetValues,
-					p.reuseValues,
-					p.valuesOpts.ValueFiles,
-					valuesSet,
-					p.valuesOpts.StringValues,
-					p.valuesOpts.FileValues,
-					p.force,
-					p.timeout,
-					p.dryRun,
-					p.debug,
-				)
-				if err != nil {
-					return false, fmt.Errorf("calling helm upgrade: %w", err)
-				}
-
-				log.Info(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
-
-				if p.verbose {
-					log.Info(3, "helm status: %s", helmstatus.Status)
-				}
-
-				if !p.dryRun && helmstatus.Status != "deployed" {
-					return false, errors.New("status returned by helm differs from \"deployed\", spray interrupted")
-				}
-			}
-		}
-	}
-	return shouldWait, nil
-}
-
-func (p *sprayCmd) wait() error {
-	log.Info(2, "waiting for liveness and readiness...")
-
-	allDeployments, err := kubectl.GetDeployments(p.namespace)
-	if err != nil {
-		return errors.New("cannot list deployments")
-	}
-	allStatefulSets, err := kubectl.GetStatefulSets(p.namespace)
-	if err != nil {
-		return errors.New("cannot list statefulsets")
-	}
-	allJobs, err := kubectl.GetJobs(p.namespace)
-	if err != nil {
-		return errors.New("cannot list jobs")
-	}
-
-	deployments := make([]string, 0)
-	for _, deployment := range allDeployments {
-		if _, ok := p.deployments[deployment]; !ok {
-			deployments = append(deployments, deployment)
-		}
-	}
-	statefulSets := make([]string, 0)
-	for _, statefulset := range allStatefulSets {
-		if _, ok := p.statefulsets[statefulset]; !ok {
-			statefulSets = append(statefulSets, statefulset)
-		}
-	}
-	jobs := make([]string, 0)
-	for _, job := range allJobs {
-		if _, ok := p.jobs[job]; !ok {
-			jobs = append(jobs, job)
-		}
-	}
-
-	sleepTime := 5
-	doneDeployments := false
-	doneStatefulSets := false
-	doneJobs := false
-
-	// Wait for completion of the Deployments/StatefulSets/Jobs
-	for i := 0; i < p.timeout; {
-		if len(deployments) > 0 && !doneDeployments {
-			if p.verbose {
-				log.Info(3, "waiting for Deployments %v", deployments)
-			}
-			doneDeployments, _ = kubectl.AreDeploymentsReady(deployments, p.namespace, p.debug)
-		} else {
-			doneDeployments = true
-		}
-		if len(statefulSets) > 0 && !doneStatefulSets {
-			if p.verbose {
-				log.Info(3, "waiting for StatefulSets %v", statefulSets)
-			}
-			doneStatefulSets, _ = kubectl.AreStatefulSetsReady(statefulSets, p.namespace, p.debug)
-		} else {
-			doneStatefulSets = true
-		}
-		if len(jobs) > 0 && !doneJobs {
-			if p.verbose {
-				log.Info(3, "waiting for Jobs %v", jobs)
-			}
-			doneJobs, _ = kubectl.AreJobsReady(jobs, p.namespace, p.debug)
-		} else {
-			doneJobs = true
-		}
-		if doneDeployments && doneStatefulSets && doneJobs {
-			break
-		}
-		time.Sleep(time.Duration(sleepTime) * time.Second)
-		i = i + sleepTime
-	}
-
-	if !doneDeployments || !doneStatefulSets || !doneJobs {
-		return errors.New("timed out waiting for liveness and readiness")
-	}
-
-	for _, deployment := range deployments {
-		p.deployments[deployment] = struct{}{}
-	}
-	for _, statefulSet := range statefulSets {
-		p.statefulsets[statefulSet] = struct{}{}
-	}
-	for _, job := range jobs {
-		p.jobs[job] = struct{}{}
-	}
-
-	return nil
-}
-
-// Retrieve the highest chart.weight in values.yaml
-func maxWeight(deps []dependencies.Dependency) (m int) {
-	if len(deps) > 0 {
-		m = deps[0].Weight
-	}
-	for i := 1; i < len(deps); i++ {
-		if deps[i].Weight > m {
-			m = deps[i].Weight
-		}
-	}
-	return m
-}
-
-func checkTargetsAndExcludes(deps []dependencies.Dependency, targets []string, excludes []string) error {
-	// Check that the provided target(s) or exclude(s) correspond to valid sub-chart names or alias
-	if len(targets) > 0 {
-		for i := range targets {
-			found := false
-			for _, dependency := range deps {
-				if targets[i] == dependency.UsedName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("invalid targetted sub-chart name/alias \"%s\"", targets[i])
-			}
-		}
-	} else if len(excludes) > 0 {
-		for i := range excludes {
-			found := false
-			for _, dependency := range deps {
-				if excludes[i] == dependency.UsedName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("invalid excluded sub-chart name/alias \"%s\"", excludes[i])
-			}
-		}
-	}
-	return nil
-}
-
-func logRelease(releases map[string]helm.Release, deps []dependencies.Dependency) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-	_, _ = fmt.Fprintln(w, "[spray]  \t subchart\t is alias of\t targeted\t weight\t| corresponding release\t revision\t status\t")
-	_, _ = fmt.Fprintln(w, "[spray]  \t --------\t -----------\t --------\t ------\t| ---------------------\t --------\t ------\t")
-
-	for _, dependency := range deps {
-		currentRevision := "None"
-		currentStatus := "Not deployed"
-		if release, ok := releases[dependency.CorrespondingReleaseName]; ok {
-			currentRevision = release.Revision
-			currentStatus = release.Status
-		}
-
-		name := dependency.Name
-		alias := "-"
-		if dependency.Alias != "" {
-			name = dependency.Alias
-			alias = dependency.Name
-		}
-
-		targeted := fmt.Sprint(dependency.Targeted)
-		if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == true) {
-			targeted = "true (tag match)"
-		} else if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == false) {
-			targeted = "false (no tag match)"
-		}
-
-		_, _ = fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
-	}
-	_ = w.Flush()
-}
-
-func removeTempDir(tempDir string) {
-	if err := os.RemoveAll(tempDir); err != nil {
-		log.Error("Error: removing temporary directory: %s", err)
-	}
-}
-
-func removeTempFile(tempFile string) {
-	if err := os.Remove(tempFile); err != nil {
-		log.Error("Error: removing temporary file: %s", err)
-	}
 }

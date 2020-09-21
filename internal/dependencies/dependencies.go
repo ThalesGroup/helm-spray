@@ -3,7 +3,7 @@ package dependencies
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gemalto/helm-spray/internal/log"
+	"github.com/gemalto/helm-spray/v4/internal/log"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"reflect"
