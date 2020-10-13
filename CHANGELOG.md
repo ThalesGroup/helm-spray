@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.3 - 10/13/2020
+* Add Darwin support [`#65`](https://github.com/ThalesGroup/helm-spray/pull/65) (Bazze)
+
 ## Version 4.0.2 - 09/21/2020
 * Expose spray logic in a library module for external usage
 
