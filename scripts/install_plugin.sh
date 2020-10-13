@@ -8,6 +8,8 @@ echo "Downloading and installing spray v${version} for ${os}..."
 url=""
 if [ "${os}" == "Linux" ] ; then
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-linux-amd64.tar.gz"
+elif [ "${os}" == "Darwin" ] ; then
+   url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-darwin-amd64.tar.gz
 else
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-windows-amd64.tar.gz"
 fi
@@ -23,7 +25,7 @@ else
     wget -q "${url}" -O "releases/v${version}.tar.gz"
 fi
 tar xzf "releases/v${version}.tar.gz" -C "releases/v${version}"
-if [ "${os}" == "Linux" ] ; then
+if [ "${os}" == "Linux" ] || [ "${os}" == "Darwin" ] ; then
     mv "releases/v${version}/bin/helm-spray" "bin/helm-spray"
 else
     mv "releases/v${version}/bin/helm-spray.exe" "bin/helm-spray.exe"
