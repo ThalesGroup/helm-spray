@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.4 - 10/16/2020
+* Fixed [`#66`](https://github.com/ThalesGroup/helm-spray/issues/66)
+
 ## Version 4.0.3 - 10/13/2020
 * Add Darwin support [`#65`](https://github.com/ThalesGroup/helm-spray/pull/65) (Bazze)
 
