@@ -92,7 +92,14 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 	for expressionNumber := 0; expressionNumber < len(regularExpressions); expressionNumber++ {
 		includeFileNameExp := regexp.MustCompile(regularExpressions[expressionNumber])
 
-		for match := includeFileNameExp.FindStringSubmatch(chartValues); len(match) != 0; {
+		// While
+		for {
+
+			match := includeFileNameExp.FindStringSubmatch(chartValues)
+			if len(match) == 0 {
+				break // Break when no regex occurence found
+			}
+
 			var fullMatch, includeFileName, subValuePath, indent string
 			if expressionNumber == 0 {
 				fullMatch = match[0]
@@ -108,7 +115,9 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 
 			replaced := false
 
+			// Looking at all the file in the chart
 			for _, f := range chart.Files {
+				// When filename on regex and file name in chart match
 				if f.Name == strings.Trim(strings.TrimSpace(includeFileName), "\"") {
 					if verbose {
 						if subValuePath == "" {
