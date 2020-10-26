@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.5 - 10/26/2020
+* Fixed [`#64`](https://github.com/ThalesGroup/helm-spray/issues/64) (AYDEV-FR)
+
 ## Version 4.0.4 - 10/16/2020
 * Fixed [`#66`](https://github.com/ThalesGroup/helm-spray/issues/66)
 
