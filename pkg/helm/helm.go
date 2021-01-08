@@ -97,7 +97,7 @@ func List(namespace string) (map[string]Release, error) {
 // UpgradeWithValues ...
 func UpgradeWithValues(namespace string, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string, force bool, timeout int, dryRun bool, debug bool) (Status, error) {
 	// Prepare parameters...
-	var myargs = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout) + "s"}
+	var myargs = []string{"upgrade", "--install", releaseName, chartPath, "--create-namespace", "--namespace", namespace, "--timeout", strconv.Itoa(timeout) + "s"}
 
 	for _, v := range valuesSet {
 		myargs = append(myargs, "--set")
