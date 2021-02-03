@@ -1,7 +1,10 @@
 # Release Notes
 
+## Version 4.0.7 - 02/03/2021
+* Fixed [`#71`](https://github.com/ThalesGroup/helm-spray/issues/71) (Elassyo)
+
 ## Version 4.0.6 - 01/08/2021
-* Fixed [`#69`](https://github.com/ThalesGroup/helm-spray/issues/64) (Elassyo)
+* Fixed [`#69`](https://github.com/ThalesGroup/helm-spray/issues/69) (Elassyo)
 
 ## Version 4.0.5 - 10/26/2020
 * Fixed [`#64`](https://github.com/ThalesGroup/helm-spray/issues/64) (AYDEV-FR)
