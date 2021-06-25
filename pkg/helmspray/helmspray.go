@@ -24,6 +24,7 @@ type Spray struct {
 	Targets                     []string
 	Excludes                    []string
 	Namespace                   string
+	CreateNamespace             bool
 	PrefixReleases              string
 	PrefixReleasesWithNamespace bool
 	ResetValues                 bool
@@ -39,7 +40,7 @@ type Spray struct {
 	jobs                        map[string]struct{}
 }
 
-// Running Spray command
+// Spray ...
 func (s *Spray) Spray() error {
 
 	if s.Debug {
@@ -199,6 +200,7 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 				// Upgrade the Deployment
 				helmstatus, err := helm.UpgradeWithValues(
 					s.Namespace,
+					s.CreateNamespace,
 					dependency.CorrespondingReleaseName,
 					s.ChartName,
 					s.ResetValues,

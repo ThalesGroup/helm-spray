@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.8 - 06/24/2021
+* Exposed helm install/update --create-namespace flag on spray. Since 4.0.6, --create-namespace is automatically passed to helm install/update commands but because it is trying to create namespace even if it already exists, it can generate errors when user rights on cluster do not include namespace creation  
+
 ## Version 4.0.7 - 02/03/2021
 * Fixed [`#71`](https://github.com/ThalesGroup/helm-spray/issues/71) (Elassyo)
 
