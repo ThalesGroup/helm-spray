@@ -1,3 +1,5 @@
+package kubectl
+
 /*
 (c) Copyright 2018, Gemalto. All rights reserved.
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -10,10 +12,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package kubectl
 
 import (
-	"fmt"
+	"github.com/gemalto/helm-spray/v4/internal/log"
 	"os"
 	"os/exec"
 	"strings"
@@ -45,9 +46,9 @@ func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 	}
 	template := generateTemplate(names, "{{if .status.succeeded}}{{if lt .status.succeeded 1}}{{printf \"%s \" .metadata.name}}{{end}}{{end}}")
 	if debug {
-		fmt.Printf("kubectl template: %s\n", template)
+		log.Info(3, "kubectl template: %s", template)
 	}
-	cmd := exec.Command("kubectl", "--namespace", namespace, "get", "jobs", "-o", "go-template="+template+"")
+	cmd := exec.Command("kubectl", "--namespace", namespace, "get", "jobs", "-o", "go-template="+template)
 	cmd.Stderr = os.Stderr
 	result, err := cmd.Output()
 	if err != nil {
@@ -56,7 +57,7 @@ func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 	}
 	strResult := string(result)
 	if debug {
-		fmt.Printf("kubectl output: %s\n", strResult)
+		log.Info(3, "kubectl output: %s", strResult)
 	}
 	if len(strResult) > 0 {
 		return false, nil
@@ -79,20 +80,30 @@ func areWorkloadsReady(k8sObjectType string, names []string, namespace string, d
 	if len(names) == 0 {
 		return true, nil
 	}
-	template := generateTemplate(names, "{{if .status.readyReplicas}}{{if lt .status.readyReplicas .spec.replicas}}{{printf \"%s \" .metadata.name}}{{end}}{{else}}{{printf \"%s \" .metadata.name}}{{end}}")
 	if debug {
-		fmt.Printf("kubectl template: %s\n", template)
+		template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{printf \"{name: %s, ready: %d, current: %d, updated: %d}\" .metadata.name $ready $current $updated}}")
+		log.Info(3, "kubectl template: %s", template)
+		cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template)
+		result, _ := cmd.Output()
+		log.Info(3, "kubectl output: %s", string(result))
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		_ = cmd.Run()
 	}
-	cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template+"")
+	template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{if or (lt $ready .spec.replicas) (lt $current .spec.replicas) (lt $updated .spec.replicas)}}{{printf \"%s \" .metadata.name}}{{end}}")
+	if debug {
+		log.Info(3, "kubectl template: %s", template)
+	}
+	cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template)
 	cmd.Stderr = os.Stderr
 	result, err := cmd.Output()
 	if err != nil {
-		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "" in any case.
+		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return false in any case.
 		return false, err
 	}
 	strResult := string(result)
 	if debug {
-		fmt.Printf("kubectl output: %s\n", strResult)
+		log.Info(3, "kubectl output: %s", strResult)
 	}
 	if len(strResult) > 0 {
 		return false, nil

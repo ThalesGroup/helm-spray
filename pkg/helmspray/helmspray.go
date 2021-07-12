@@ -12,8 +12,12 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 	cliValues "helm.sh/helm/v3/pkg/cli/values"
 	"io/ioutil"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 )
@@ -35,16 +39,16 @@ type Spray struct {
 	DryRun                      bool
 	Verbose                     bool
 	Debug                       bool
-	deployments                 map[string]struct{}
-	statefulsets                map[string]struct{}
-	jobs                        map[string]struct{}
+	deployments                 []string
+	statefulSets                []string
+	jobs                        []string
 }
 
 // Spray ...
 func (s *Spray) Spray() error {
 
 	if s.Debug {
-		log.Info(1, "starting spray with flags: %+v\n", s)
+		log.Info(1, "starting spray with flags: %+v", s)
 	}
 
 	startTime := time.Now()
@@ -101,7 +105,7 @@ func (s *Spray) Spray() error {
 		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\"", s.ChartName, s.Namespace)
 	}
 
-	releases, err := helm.List(s.Namespace)
+	releases, err := helm.List(1, s.Namespace, s.Debug)
 	if err != nil {
 		return fmt.Errorf("listing releases: %w", err)
 	}
@@ -113,33 +117,6 @@ func (s *Spray) Spray() error {
 	err = checkTargetsAndExcludes(deps, s.Targets, s.Excludes)
 	if err != nil {
 		return fmt.Errorf("checking targets and excludes: %w", err)
-	}
-
-	s.deployments = map[string]struct{}{}
-	s.statefulsets = map[string]struct{}{}
-	s.jobs = map[string]struct{}{}
-
-	allDeployments, err := kubectl.GetDeployments(s.Namespace)
-	if err != nil {
-		return errors.New("cannot list deployments")
-	}
-	allStatefulSets, err := kubectl.GetStatefulSets(s.Namespace)
-	if err != nil {
-		return errors.New("cannot list statefulsets")
-	}
-	allJobs, err := kubectl.GetJobs(s.Namespace)
-	if err != nil {
-		return errors.New("cannot list jobs")
-	}
-
-	for _, deployment := range allDeployments {
-		s.deployments[deployment] = struct{}{}
-	}
-	for _, statefulSet := range allStatefulSets {
-		s.statefulsets[statefulSet] = struct{}{}
-	}
-	for _, job := range allJobs {
-		s.jobs[job] = struct{}{}
 	}
 
 	// Loop on the increasing weight
@@ -172,6 +149,9 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 				if firstInWeight {
 					log.Info(1, "processing sub-charts of weight %d", dependency.Weight)
 					firstInWeight = false
+					s.deployments = make([]string, 0)
+					s.statefulSets = make([]string, 0)
+					s.jobs = make([]string, 0)
 				}
 
 				if release, ok := releases[dependency.CorrespondingReleaseName]; ok {
@@ -198,7 +178,7 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 				valuesSet = append(valuesSet, depValuesSet)
 
 				// Upgrade the Deployment
-				helmstatus, err := helm.UpgradeWithValues(
+				upgradedRelease, err := helm.UpgradeWithValues(3,
 					s.Namespace,
 					s.CreateNamespace,
 					dependency.CorrespondingReleaseName,
@@ -221,11 +201,44 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 				log.Info(3, "release: \"%s\" upgraded", dependency.CorrespondingReleaseName)
 
 				if s.Verbose {
-					log.Info(3, "helm status: %s", helmstatus.Status)
+					log.Info(3, "helm status: %s", upgradedRelease.Info["status"])
+				}
+				if !s.DryRun && upgradedRelease.Info["status"] != "deployed" {
+					return false, errors.New("status returned by helm differs from \"deployed\", spray interrupted")
 				}
 
-				if !s.DryRun && helmstatus.Status != "deployed" {
-					return false, errors.New("status returned by helm differs from \"deployed\", spray interrupted")
+				for _, yaml := range strings.Split(upgradedRelease.Manifest, "---") {
+					manifest, _, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(yaml), nil, nil)
+					if err != nil && len(yaml) > 0 {
+						log.Info(3, "warning: ignored part of helm upgrade output")
+						if s.Debug {
+							log.Info(3, "warning: ignored '%s'", yaml)
+						}
+					}
+					deployment, ok := manifest.(*appsv1.Deployment)
+					if ok {
+						s.deployments = append(s.deployments, deployment.Name)
+					}
+					statefulSet, ok := manifest.(*appsv1.StatefulSet)
+					if ok {
+						s.statefulSets = append(s.statefulSets, statefulSet.Name)
+					}
+					job, ok := manifest.(*batchv1.Job)
+					if ok {
+						s.jobs = append(s.jobs, job.Name)
+					}
+				}
+
+				if s.Verbose {
+					if len(s.deployments) > 0 {
+						log.Info(3, "release deployments: %v", s.deployments)
+					}
+					if len(s.statefulSets) > 0 {
+						log.Info(3, "release statefulsets: %v", s.statefulSets)
+					}
+					if len(s.jobs) > 0 {
+						log.Info(3, "release jobs: %v", s.jobs)
+					}
 				}
 			}
 		}
@@ -236,38 +249,6 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 func (s *Spray) wait() error {
 	log.Info(2, "waiting for liveness and readiness...")
 
-	allDeployments, err := kubectl.GetDeployments(s.Namespace)
-	if err != nil {
-		return errors.New("cannot list deployments")
-	}
-	allStatefulSets, err := kubectl.GetStatefulSets(s.Namespace)
-	if err != nil {
-		return errors.New("cannot list statefulsets")
-	}
-	allJobs, err := kubectl.GetJobs(s.Namespace)
-	if err != nil {
-		return errors.New("cannot list jobs")
-	}
-
-	deployments := make([]string, 0)
-	for _, deployment := range allDeployments {
-		if _, ok := s.deployments[deployment]; !ok {
-			deployments = append(deployments, deployment)
-		}
-	}
-	statefulSets := make([]string, 0)
-	for _, statefulset := range allStatefulSets {
-		if _, ok := s.statefulsets[statefulset]; !ok {
-			statefulSets = append(statefulSets, statefulset)
-		}
-	}
-	jobs := make([]string, 0)
-	for _, job := range allJobs {
-		if _, ok := s.jobs[job]; !ok {
-			jobs = append(jobs, job)
-		}
-	}
-
 	sleepTime := 5
 	doneDeployments := false
 	doneStatefulSets := false
@@ -275,27 +256,27 @@ func (s *Spray) wait() error {
 
 	// Wait for completion of the Deployments/StatefulSets/Jobs
 	for i := 0; i < s.Timeout; {
-		if len(deployments) > 0 && !doneDeployments {
+		if len(s.deployments) > 0 && !doneDeployments {
 			if s.Verbose {
-				log.Info(3, "waiting for Deployments %v", deployments)
+				log.Info(3, "waiting for deployments %v", s.deployments)
 			}
-			doneDeployments, _ = kubectl.AreDeploymentsReady(deployments, s.Namespace, s.Debug)
+			doneDeployments, _ = kubectl.AreDeploymentsReady(s.deployments, s.Namespace, s.Debug)
 		} else {
 			doneDeployments = true
 		}
-		if len(statefulSets) > 0 && !doneStatefulSets {
+		if len(s.statefulSets) > 0 && !doneStatefulSets {
 			if s.Verbose {
-				log.Info(3, "waiting for StatefulSets %v", statefulSets)
+				log.Info(3, "waiting for statefulsets %v", s.statefulSets)
 			}
-			doneStatefulSets, _ = kubectl.AreStatefulSetsReady(statefulSets, s.Namespace, s.Debug)
+			doneStatefulSets, _ = kubectl.AreStatefulSetsReady(s.statefulSets, s.Namespace, s.Debug)
 		} else {
 			doneStatefulSets = true
 		}
-		if len(jobs) > 0 && !doneJobs {
+		if len(s.jobs) > 0 && !doneJobs {
 			if s.Verbose {
-				log.Info(3, "waiting for Jobs %v", jobs)
+				log.Info(3, "waiting for jobs %v", s.jobs)
 			}
-			doneJobs, _ = kubectl.AreJobsReady(jobs, s.Namespace, s.Debug)
+			doneJobs, _ = kubectl.AreJobsReady(s.jobs, s.Namespace, s.Debug)
 		} else {
 			doneJobs = true
 		}
@@ -308,16 +289,6 @@ func (s *Spray) wait() error {
 
 	if !doneDeployments || !doneStatefulSets || !doneJobs {
 		return errors.New("timed out waiting for liveness and readiness")
-	}
-
-	for _, deployment := range deployments {
-		s.deployments[deployment] = struct{}{}
-	}
-	for _, statefulSet := range statefulSets {
-		s.statefulsets[statefulSet] = struct{}{}
-	}
-	for _, job := range jobs {
-		s.jobs[job] = struct{}{}
 	}
 
 	return nil
