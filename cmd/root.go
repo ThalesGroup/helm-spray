@@ -155,7 +155,7 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVar(&s.Force, "force", false, "force resource update through delete/recreate if needed")
 	f.IntVar(&s.Timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)\nand for liveness and readiness (like Deployments and regular Jobs completion)")
 	f.BoolVar(&s.DryRun, "dry-run", false, "simulate a spray")
-	f.BoolVar(&s.Verbose, "verbose", false, "enable spray verbose output")
+	f.BoolVarP(&s.Verbose, "verbose", "v", false, "enable spray verbose output")
 	f.BoolVar(&s.Debug, "debug", false, "enable helm debug output (also include spray verbose output)")
 
 	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar

@@ -1,5 +1,9 @@
 # Release Notes
 
+## Version 4.0.10 - ?
+* Reducing excessing verbose logs on helm upgrade ignored parts
+* Added error management when readiness kubectl template cannot be executed
+
 ## Version 4.0.9 - 07/12/2021
 * Fixed [`#73`](https://github.com/ThalesGroup/helm-spray/issues/73) (cvila84)
 

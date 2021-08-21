@@ -207,13 +207,11 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 					return false, errors.New("status returned by helm differs from \"deployed\", spray interrupted")
 				}
 
+				ignoredParts := make([]string, 0)
 				for _, yaml := range strings.Split(upgradedRelease.Manifest, "---") {
 					manifest, _, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(yaml), nil, nil)
 					if err != nil && len(yaml) > 0 {
-						log.Info(3, "warning: ignored part of helm upgrade output")
-						if s.Debug {
-							log.Info(3, "warning: ignored '%s'", yaml)
-						}
+						ignoredParts = append(ignoredParts, yaml)
 					}
 					deployment, ok := manifest.(*appsv1.Deployment)
 					if ok {
@@ -230,6 +228,12 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 				}
 
 				if s.Verbose {
+					if len(ignoredParts) > 0 {
+						log.Info(3, "warning: ignored part(s) of helm upgrade output")
+						if s.Debug {
+							log.Info(3, "warning: ignored '%v'", ignoredParts)
+						}
+					}
 					if len(s.deployments) > 0 {
 						log.Info(3, "release deployments: %v", s.deployments)
 					}
@@ -260,7 +264,11 @@ func (s *Spray) wait() error {
 			if s.Verbose {
 				log.Info(3, "waiting for deployments %v", s.deployments)
 			}
-			doneDeployments, _ = kubectl.AreDeploymentsReady(s.deployments, s.Namespace, s.Debug)
+			var err error
+			doneDeployments, err = kubectl.AreDeploymentsReady(s.deployments, s.Namespace, s.Debug)
+			if err != nil {
+				return fmt.Errorf("cannot check readiness of %v: %w", s.deployments, err)
+			}
 		} else {
 			doneDeployments = true
 		}
@@ -268,7 +276,11 @@ func (s *Spray) wait() error {
 			if s.Verbose {
 				log.Info(3, "waiting for statefulsets %v", s.statefulSets)
 			}
-			doneStatefulSets, _ = kubectl.AreStatefulSetsReady(s.statefulSets, s.Namespace, s.Debug)
+			var err error
+			doneStatefulSets, err = kubectl.AreStatefulSetsReady(s.statefulSets, s.Namespace, s.Debug)
+			if err != nil {
+				return fmt.Errorf("cannot check readiness of %v: %w", s.statefulSets, err)
+			}
 		} else {
 			doneStatefulSets = true
 		}
@@ -276,7 +288,11 @@ func (s *Spray) wait() error {
 			if s.Verbose {
 				log.Info(3, "waiting for jobs %v", s.jobs)
 			}
-			doneJobs, _ = kubectl.AreJobsReady(s.jobs, s.Namespace, s.Debug)
+			var err error
+			doneJobs, err = kubectl.AreJobsReady(s.jobs, s.Namespace, s.Debug)
+			if err != nil {
+				return fmt.Errorf("cannot check readiness of %v: %w", s.jobs, err)
+			}
 		} else {
 			doneJobs = true
 		}
