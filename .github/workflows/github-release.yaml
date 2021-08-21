@@ -25,4 +25,4 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           prerelease: true
-          files: _dist/helm-spray*
+          files: ${{ github.workspace }}/src/github.com/gemalto/helm-spray/_dist/helm-spray*
