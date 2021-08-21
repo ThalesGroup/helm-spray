@@ -1,10 +1,8 @@
 name: Release on github
 on:
   push:
-    branches:
-      - "github-workflow"
-#    tags:
-#      - 'v*'
+    tags:
+      - 'v*'
 jobs:
   build:
     name: Make release
