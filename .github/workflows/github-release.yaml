@@ -17,5 +17,5 @@ jobs:
           path: ${{ github.workspace }}/src/github.com/gemalto/helm-spray
       - name: Make release
         run: |
-          ls -lR ${{ github.workspace }}
+          cd ${{ github.workspace }}/src/github.com/gemalto/helm-spray
           make dist
