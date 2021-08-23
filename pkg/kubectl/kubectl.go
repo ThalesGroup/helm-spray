@@ -84,11 +84,15 @@ func areWorkloadsReady(k8sObjectType string, names []string, namespace string, d
 		template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{printf \"{name: %s, ready: %d, current: %d, updated: %d}\" .metadata.name $ready $current $updated}}")
 		log.Info(3, "kubectl template: %s", template)
 		cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template)
-		result, _ := cmd.Output()
-		log.Info(3, "kubectl output: %s", string(result))
-		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		_ = cmd.Run()
+		result, err := cmd.Output()
+		if err != nil {
+			// Activating debug logs should not generate additional errors so let's only warn the user and go further
+			// If there is a real error linked to kubectl execution, it will pop up just after
+			log.Info(3, "warning: cannot get kubectl output because of an error (%s)", err)
+		} else {
+			log.Info(3, "kubectl output: %s", string(result))
+		}
 	}
 	template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{if or (lt $ready .spec.replicas) (lt $current .spec.replicas) (lt $updated .spec.replicas)}}{{printf \"%s \" .metadata.name}}{{end}}")
 	if debug {
