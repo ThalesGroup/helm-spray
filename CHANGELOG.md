@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 4.0.10 - ?
+## Version 4.0.10 - 08/24/2021
 * Reducing excessing verbose logs on helm upgrade ignored parts
 * Added error management when readiness kubectl template cannot be executed
 
