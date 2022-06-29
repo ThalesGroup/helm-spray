@@ -1,5 +1,5 @@
 name: "spray"
-version: 4.0.11-beta.1
+version: 4.0.11-beta.2
 usage: "upgrade sub-charts from an umbrella chart with dependency orders"
 description: "Helm plugin for upgrading sub-charts from umbrella chart with dependency orders"
 command: "$HELM_PLUGIN_DIR/bin/helm-spray"

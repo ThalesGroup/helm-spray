@@ -98,8 +98,8 @@ func NewRootCmd() *cobra.Command {
 					return errors.New("cannot use --version together with chart directory")
 				}
 
-				if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
-					return errors.New("cannot use --version together with chart URL")
+				if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
+					return errors.New("cannot use --version together with chart HTTP(S) URL")
 				}
 			}
 
@@ -111,18 +111,22 @@ func NewRootCmd() *cobra.Command {
 				return errors.New("cannot use both --target and --exclude together")
 			}
 
-			// If chart is specified through an url, the fetch it from the url.
+			// If chart is specified through an URL, then fetch it from the URL.
 			if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
-				log.Info(1, "fetching chart from url \"%s\"...", s.ChartName)
+				if s.ChartVersion != "" {
+					log.Info(1, "fetching chart from URL \"%s\" with version \"%s\"...", s.ChartName, s.ChartVersion)
+				} else {
+					log.Info(1, "fetching chart from URL \"%s\"...", s.ChartName)
+				}
 				var err error
-				s.ChartName, err = helm.Fetch(s.ChartName, "")
+				s.ChartName, err = helm.Fetch(s.ChartName, s.ChartVersion)
 				if err != nil {
-					return fmt.Errorf("fetching chart %s: %w", s.ChartName, err)
+					return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
 				}
 			} else if _, err := os.Stat(s.ChartName); err != nil {
 				// If local file (or directory) does not exist, then fetch it from a repo.
 				if s.ChartVersion != "" {
-					log.Info(1, "fetching chart \"%s\" version \"%s\" from repos...", s.ChartName, s.ChartVersion)
+					log.Info(1, "fetching chart \"%s\" from repos with version \"%s\"...", s.ChartName, s.ChartVersion)
 				} else {
 					log.Info(1, "fetching chart \"%s\" from repos...", s.ChartName)
 				}
