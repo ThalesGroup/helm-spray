@@ -98,7 +98,7 @@ func NewRootCmd() *cobra.Command {
 					return errors.New("cannot use --version together with chart directory")
 				}
 
-				if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
+				if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
 					return errors.New("cannot use --version together with chart URL")
 				}
 			}
@@ -112,7 +112,7 @@ func NewRootCmd() *cobra.Command {
 			}
 
 			// If chart is specified through an url, the fetch it from the url.
-			if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
+			if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
 				log.Info(1, "fetching chart from url \"%s\"...", s.ChartName)
 				var err error
 				s.ChartName, err = helm.Fetch(s.ChartName, "")
