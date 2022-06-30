@@ -151,29 +151,30 @@ func Fetch(chart string, version string) (string, error) {
 	}
 	defer removeTempDir(tempDir)
 
-	var command string
 	var cmd *exec.Cmd
+
+	var args = []string{"fetch", chart, "--destination", tempDir}
+	if version != "" {
+		args = append(args, "--version", version)
+	}
+	cmd = exec.Command("helm", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+
+	var command string
 	var endOfLine string
 	if runtime.GOOS == "windows" {
-		if version != "" {
-			command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
-		} else {
-			command = "helm fetch " + chart + " --destination " + tempDir
-		}
-		command = command + " && dir /b " + tempDir + " && copy " + tempDir + "\\* ."
+		command = "dir /b " + tempDir + " && copy " + tempDir + "\\* ."
 		cmd = exec.Command("cmd", "/C", command)
 		endOfLine = "\r\n"
 	} else {
-		if version != "" {
-			command = "helm fetch " + chart + " --destination " + tempDir + " --version " + version
-		} else {
-			command = "helm fetch " + chart + " --destination " + tempDir
-		}
-		command = command + " && ls " + tempDir + " && cp " + tempDir + "/* ."
+		command = "ls " + tempDir + " && cp " + tempDir + "/* ."
 		cmd = exec.Command("sh", "-c", command)
 		endOfLine = "\n"
 	}
-
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	cmd.Stderr = os.Stderr
