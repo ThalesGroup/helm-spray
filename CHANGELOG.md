@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.12 - 12/15/2022
+* Updated build dependencies
+
 ## Version 4.0.11 - 06/29/2022
 * Add OCI support to fetch umbrealla chart [`#76`](https://github.com/ThalesGroup/helm-spray/issues/76) (cvila84)
 * Updated build dependencies
