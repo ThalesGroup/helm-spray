@@ -1,5 +1,8 @@
 # Release Notes
 
+## Version 4.0.12 - 07/07/2023
+* Updated build dependencies
+
 ## Version 4.0.12 - 12/15/2022
 * Updated build dependencies
 
