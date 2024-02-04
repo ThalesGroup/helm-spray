@@ -48,8 +48,8 @@ Please follow this [page](https://kubernetes.io/docs/tasks/tools/install-kubectl
 ```
 
 Helm Spray shall always be called on the umbrella chart, whatever it is for upgrading the full set of charts, or for upgrading individual sub-charts (using the `--target` option).
-For a proper usage of helm spray, the umbrella chart shall have a `requirement.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled`.
-Here is an example of `requirement.yaml` file for an umbrella chart having three sub-charts, one of them having an alias:
+For a proper usage of helm spray, the umbrella chart shall have a `requirements.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled`.
+Here is an example of `requirements.yaml` file for an umbrella chart having three sub-charts, one of them having an alias:
 ```
 dependencies:
 - name: micro-service-1
@@ -68,7 +68,7 @@ dependencies:
 ```
 
 A "values" file shall also be set with the weight it be applied to each individual sub-chart. This weight shall be set in the `<chart name or alias>.weight` element. A good practice is that thei weigths are statically set in the default `values.yaml` file of the umbrella chart (and not in a yaml file provided using the `-f` option), as sub-chart's weight is not likely to change over time.
-As an example corresponding to the above `requirement.yaml` file, the `values.yaml` file of the umbrella chart might be:
+As an example corresponding to the above `requirements.yaml` file, the `values.yaml` file of the umbrella chart might be:
 ```
 micro-service-1:
   weight: 0
