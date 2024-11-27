@@ -1,5 +1,10 @@
 # Release Notes
 
+## Version 4.0.13 - 11/27/2024
+* Bump to helm v3.16.3, k8s.io/api v0.31.3, go 1.22, and k8s.io/client-go v0.31.3
+* Fixed [`#92`](https://github.com/ThalesGroup/helm-spray/issues/92) (barmaths)
+* Fixed [`#86`](https://github.com/ThalesGroup/helm-spray/issues/86) (dongbeiqing91)
+
 ## Version 4.0.12 - 02/03/2024
 * Updated build dependencies
 
