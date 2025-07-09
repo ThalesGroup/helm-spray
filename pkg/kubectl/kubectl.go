@@ -14,10 +14,12 @@ limitations under the License.
 */
 
 import (
-	"github.com/gemalto/helm-spray/v4/internal/log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+
+	"github.com/gemalto/helm-spray/v4/internal/log"
 )
 
 func GetDeployments(namespace string) ([]string, error) {
@@ -41,26 +43,25 @@ func AreStatefulSetsReady(names []string, namespace string, debug bool) (bool, e
 }
 
 func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
-	if len(names) == 0 {
-		return true, nil
-	}
-	template := generateTemplate(names, "{{if .status.succeeded}}{{if lt .status.succeeded 1}}{{printf \"%s \" .metadata.name}}{{end}}{{end}}")
-	if debug {
-		log.Info(3, "kubectl template: %s", template)
-	}
-	cmd := exec.Command("kubectl", "--namespace", namespace, "get", "jobs", "-o", "go-template="+template)
-	cmd.Stderr = os.Stderr
-	result, err := cmd.Output()
-	if err != nil {
-		// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "" in any case.
-		return false, err
-	}
-	strResult := string(result)
-	if debug {
-		log.Info(3, "kubectl output: %s", strResult)
-	}
-	if len(strResult) > 0 {
-		return false, nil
+	for _, name := range names {
+		cmd := exec.Command("kubectl", "--namespace", namespace, "get", "job", name, "--output=jsonpath={.status.succeeded}")
+		cmd.Stderr = os.Stderr
+		result, err := cmd.Output()
+		if err != nil {
+			// Cannot make the difference between an error when calling kubectl and no corresponding resource found. Return "" in any case.
+			return false, err
+		}
+		strResult := string(result)
+		if debug {
+			log.Info(3, "kubectl output: %s", strResult)
+		}
+		succeeded, _ := strconv.Atoi(strResult)
+		if succeeded < 1 {
+			if debug {
+				log.Info(3, "job %s is not completed", name)
+			}
+			return false, nil
+		}
 	}
 	return true, nil
 }
