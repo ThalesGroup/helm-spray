@@ -242,6 +242,53 @@ func TestGet_TagNotInValuesBlocksDep(t *testing.T) {
 	}
 }
 
+func TestGet_MissingWeightKeyError(t *testing.T) {
+	// Values without "weight" key: PathValue returns an error
+	c := makeChart([]*chart.Dependency{{Name: "svc"}}, nil)
+	v := &chartutil.Values{"svc": map[string]interface{}{}} // no "weight" key
+	_, err := Get(c, v, nil, nil, "", false)
+	if err == nil {
+		t.Error("expected error when weight key is missing from values")
+	}
+}
+
+func TestGet_VerboseMode(t *testing.T) {
+	c := makeChart([]*chart.Dependency{{Name: "svc"}}, nil)
+	v := makeValues(map[string]float64{"svc": 0})
+	deps, err := Get(c, v, nil, nil, "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deps) != 1 {
+		t.Fatalf("expected 1 dep, got %d", len(deps))
+	}
+}
+
+func TestGet_VerboseWithTags(t *testing.T) {
+	c := makeChart([]*chart.Dependency{{Name: "svc", Tags: []string{"optional"}}}, nil)
+	v := &chartutil.Values{
+		"svc":  map[string]interface{}{"weight": float64(0)},
+		"tags": map[string]interface{}{"optional": true},
+	}
+	deps, err := Get(c, v, nil, nil, "", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !deps[0].AllowedByTags {
+		t.Error("expected AllowedByTags=true in verbose mode")
+	}
+}
+
+func TestGet_WeightAsJsonNumberInvalidInt(t *testing.T) {
+	c := makeChart([]*chart.Dependency{{Name: "svc"}}, nil)
+	// json.Number that cannot be parsed as int64
+	v := &chartutil.Values{"svc": map[string]interface{}{"weight": json.Number("9999999999999999999999")}}
+	_, err := Get(c, v, nil, nil, "", false)
+	if err == nil {
+		t.Error("expected error for overflow json.Number")
+	}
+}
+
 func TestGet_MultipleWeights(t *testing.T) {
 	c := makeChart([]*chart.Dependency{{Name: "db"}, {Name: "cache"}, {Name: "app"}}, nil)
 	v := makeValues(map[string]float64{"db": 0, "cache": 1, "app": 2})

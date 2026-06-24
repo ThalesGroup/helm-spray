@@ -65,3 +65,34 @@ func TestGenerateTemplate_SingleNameDoesNotUseOr(t *testing.T) {
 		t.Error("single name should not use 'or' combinator")
 	}
 }
+
+func TestAreDeploymentsReady_EmptyNamesReturnsTrue(t *testing.T) {
+	// Empty names list hits the early-return path without any kubectl call
+	ready, err := AreDeploymentsReady([]string{}, "default", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ready {
+		t.Error("expected ready=true for empty names list")
+	}
+}
+
+func TestAreStatefulSetsReady_EmptyNamesReturnsTrue(t *testing.T) {
+	ready, err := AreStatefulSetsReady([]string{}, "default", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ready {
+		t.Error("expected ready=true for empty names list")
+	}
+}
+
+func TestAreJobsReady_EmptyNamesReturnsTrue(t *testing.T) {
+	ready, err := AreJobsReady([]string{}, "default", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ready {
+		t.Error("expected ready=true for empty names list")
+	}
+}

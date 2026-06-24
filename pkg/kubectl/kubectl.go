@@ -22,6 +22,11 @@ import (
 	"github.com/gemalto/helm-spray/v4/internal/log"
 )
 
+const (
+	namespaceFlag    = "--namespace"
+	kubectlOutputMsg = "kubectl output: %s"
+)
+
 func GetDeployments(namespace string) ([]string, error) {
 	return getWorkloads("deployments", namespace)
 }
@@ -44,7 +49,7 @@ func AreStatefulSetsReady(names []string, namespace string, debug bool) (bool, e
 
 func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 	for _, name := range names {
-		cmd := exec.Command("kubectl", "--namespace", namespace, "get", "job", name, "--output=jsonpath={.status.succeeded}")
+		cmd := exec.Command("kubectl", namespaceFlag, namespace, "get", "job", name, "--output=jsonpath={.status.succeeded}")
 		cmd.Stderr = os.Stderr
 		result, err := cmd.Output()
 		if err != nil {
@@ -53,7 +58,7 @@ func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 		}
 		strResult := string(result)
 		if debug {
-			log.Info(3, "kubectl output: %s", strResult)
+			log.Info(3, kubectlOutputMsg, strResult)
 		}
 		succeeded, _ := strconv.Atoi(strResult)
 		if succeeded < 1 {
@@ -67,7 +72,7 @@ func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 }
 
 func getWorkloads(k8sObjectType string, namespace string) ([]string, error) {
-	cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "--output=jsonpath={.items..metadata.name}")
+	cmd := exec.Command("kubectl", namespaceFlag, namespace, "get", k8sObjectType, "--output=jsonpath={.items..metadata.name}")
 	cmd.Stderr = os.Stderr
 	result, err := cmd.Output()
 	if err != nil {
@@ -84,7 +89,7 @@ func areWorkloadsReady(k8sObjectType string, names []string, namespace string, d
 	if debug {
 		template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{printf \"{name: %s, ready: %d, current: %d, updated: %d}\" .metadata.name $ready $current $updated}}")
 		log.Info(3, "kubectl template: %s", template)
-		cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template)
+		cmd := exec.Command("kubectl", namespaceFlag, namespace, "get", k8sObjectType, "-o", "go-template="+template)
 		cmd.Stderr = os.Stderr
 		result, err := cmd.Output()
 		if err != nil {
@@ -92,14 +97,14 @@ func areWorkloadsReady(k8sObjectType string, names []string, namespace string, d
 			// If there is a real error linked to kubectl execution, it will pop up just after
 			log.Info(3, "warning: cannot get kubectl output because of an error (%s)", err)
 		} else {
-			log.Info(3, "kubectl output: %s", string(result))
+			log.Info(3, kubectlOutputMsg, string(result))
 		}
 	}
 	template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{if or (lt $ready .spec.replicas) (lt $current .spec.replicas) (lt $updated .spec.replicas)}}{{printf \"%s \" .metadata.name}}{{end}}")
 	if debug {
 		log.Info(3, "kubectl template: %s", template)
 	}
-	cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template)
+	cmd := exec.Command("kubectl", namespaceFlag, namespace, "get", k8sObjectType, "-o", "go-template="+template)
 	cmd.Stderr = os.Stderr
 	result, err := cmd.Output()
 	if err != nil {
@@ -108,7 +113,7 @@ func areWorkloadsReady(k8sObjectType string, names []string, namespace string, d
 	}
 	strResult := string(result)
 	if debug {
-		log.Info(3, "kubectl output: %s", strResult)
+		log.Info(3, kubectlOutputMsg, strResult)
 	}
 	if len(strResult) > 0 {
 		return false, nil

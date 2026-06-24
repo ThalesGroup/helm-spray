@@ -38,72 +38,14 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 			dependencies[i].UsedName = dependencies[i].Alias
 		}
 
-		// Is dependency targeted?
-		// If --target or --excludes are specified, it should match the name of the current dependency;
-		// If neither --target nor --exclude are specified, then all dependencies are targeted
-		if len(targets) > 0 {
-			dependencies[i].Targeted = false
-			for j := range targets {
-				if targets[j] == dependencies[i].UsedName {
-					dependencies[i].Targeted = true
-				}
-			}
+		dependencies[i].Targeted = computeTargeted(dependencies[i].UsedName, targets, excludes)
+		dependencies[i].HasTags, dependencies[i].AllowedByTags = computeAllowedByTags(req.Tags, providedTags)
 
-		} else if len(excludes) > 0 {
-			dependencies[i].Targeted = true
-			for j := range excludes {
-				if excludes[j] == dependencies[i].UsedName {
-					dependencies[i].Targeted = false
-				}
-			}
-
-		} else {
-			dependencies[i].Targeted = true
-		}
-
-		// Loop on the tags associated to the dependency and check with the tags provided in the values
-		dependencies[i].AllowedByTags = false
-		if len(req.Tags) == 0 {
-			dependencies[i].HasTags = false
-			dependencies[i].AllowedByTags = true
-		} else {
-			dependencies[i].HasTags = true
-			for _, tag := range req.Tags {
-				for k, v := range providedTags {
-					if k == tag && v == true {
-						dependencies[i].AllowedByTags = true
-					}
-				}
-			}
-		}
-
-		// Get weight of the dependency. If no weight is specified, setting it to 0
-		dependencies[i].Weight = 0
-		weightJson, err := values.PathValue(dependencies[i].UsedName + ".weight")
+		weight, err := computeWeight(values, dependencies[i].UsedName)
 		if err != nil {
-			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
+			return nil, err
 		}
-
-		weightInteger := 0
-		// Depending on the configuration of the json parser, integer can be returned either as Float64 or json.Number
-		if reflect.TypeOf(weightJson).String() == "json.Number" {
-			w, err := weightJson.(json.Number).Int64()
-			if err != nil {
-				return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
-			}
-			weightInteger = int(w)
-
-		} else if reflect.TypeOf(weightJson).String() == "float64" {
-			weightInteger = int(weightJson.(float64))
-
-		} else {
-			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be an integer", dependencies[i].UsedName)
-		}
-
-		if weightInteger < 0 {
-			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be positive or equal to zero", dependencies[i].UsedName)
-		}
-		dependencies[i].Weight = weightInteger
+		dependencies[i].Weight = weight
 		dependencies[i].CorrespondingReleaseName = releasePrefix + dependencies[i].UsedName
 
 		// Get the AppVersion that is contained in the Chart.yaml file of the dependency sub-chart
@@ -115,6 +57,73 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 		}
 	}
 	return dependencies, nil
+}
+
+// computeTargeted determines whether a dependency is targeted.
+// If --target or --excludes are specified, it should match the name of the current dependency;
+// if neither --target nor --exclude are specified, then all dependencies are targeted.
+func computeTargeted(usedName string, targets []string, excludes []string) bool {
+	if len(targets) > 0 {
+		for j := range targets {
+			if targets[j] == usedName {
+				return true
+			}
+		}
+		return false
+	}
+	if len(excludes) > 0 {
+		for j := range excludes {
+			if excludes[j] == usedName {
+				return false
+			}
+		}
+		return true
+	}
+	return true
+}
+
+// computeAllowedByTags checks the tags associated to the dependency against the tags provided in the values.
+func computeAllowedByTags(reqTags []string, providedTags map[string]interface{}) (hasTags bool, allowed bool) {
+	if len(reqTags) == 0 {
+		return false, true
+	}
+	for _, tag := range reqTags {
+		for k, v := range providedTags {
+			if k == tag && v == true {
+				return true, true
+			}
+		}
+	}
+	return true, false
+}
+
+// computeWeight extracts the weight of the dependency. If no weight is specified, it is 0.
+func computeWeight(values *chartutil.Values, usedName string) (int, error) {
+	weightJson, err := values.PathValue(usedName + ".weight")
+	if err != nil {
+		return 0, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", usedName, err)
+	}
+
+	weightInteger := 0
+	// Depending on the configuration of the json parser, integer can be returned either as Float64 or json.Number
+	if reflect.TypeOf(weightJson).String() == "json.Number" {
+		w, err := weightJson.(json.Number).Int64()
+		if err != nil {
+			return 0, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", usedName, err)
+		}
+		weightInteger = int(w)
+
+	} else if reflect.TypeOf(weightJson).String() == "float64" {
+		weightInteger = int(weightJson.(float64))
+
+	} else {
+		return 0, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be an integer", usedName)
+	}
+
+	if weightInteger < 0 {
+		return 0, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be positive or equal to zero", usedName)
+	}
+	return weightInteger, nil
 }
 
 func tags(values *chartutil.Values, verbose bool) map[string]interface{} {
