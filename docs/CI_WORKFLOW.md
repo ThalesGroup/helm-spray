@@ -2,69 +2,37 @@
 
 ## What was done
 
-Added a continuous integration workflow and modernized the existing release workflow, which previously only ran on version-tag pushes with no test gate of any kind.
+Added a full CI pipeline for both GitHub and GitLab, covering build, test, formatting, and SonarQube quality gate. The project previously had no test gate of any kind.
 
-**Branch:** `feat/test-suite`  
-**Commit:** `ci: add test workflow and modernize action versions to v4/v5`
-
----
-
-## Files changed
-
-| File | Change |
-|---|---|
-| `.github/workflows/ci.yaml` | Created — new CI pipeline |
-| `.github/workflows/github-release.yaml` | Updated — modernized Go and action versions |
+**Branch:** `feat/test-suite`
 
 ---
 
-## New workflow: `ci.yaml`
+## GitHub Actions (`.github/workflows/`)
+
+### New workflow: `ci.yaml`
+
+Runs on every push to any branch and on every pull request.
 
 ```yaml
 name: CI
-
 on:
   push:
-    branches:
-      - '**'
+    branches: ['**']
   pull_request:
-
 jobs:
   test:
-    name: Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
+      - run: go vet ./...
+      - run: go test ./...
 ```
 
-### Trigger
-
-Runs on every push to any branch and on every pull request. This means all future contributions get test feedback before merge.
-
-### Steps
-
-1. **Checkout** — full source at the pushed ref.
-2. **Setup Go** — reads the version from `go.mod` (`go 1.24.0`). No hardcoded version to keep in sync.
-3. **Vet** — runs `go vet ./...` to catch misuse of format strings, unreachable code, and other static issues.
-4. **Test** — runs `go test ./...` against all 50 tests across the four packages that now have coverage.
-
----
-
-## Updated workflow: `github-release.yaml`
-
-### Changes
+### Updated workflow: `github-release.yaml`
 
 | Field | Before | After |
 |---|---|---|
@@ -72,15 +40,37 @@ Runs on every push to any branch and on every pull request. This means all futur
 | `actions/setup-go` | `@v2` | `@v5` |
 | Go version | `'1.22'` (hardcoded) | `go-version-file: go.mod` |
 
-The release workflow now uses the same Go version as the rest of the project (1.24) and modern action versions that receive security updates. Switching to `go-version-file` means the release and CI workflows stay in sync with `go.mod` automatically.
+---
+
+## GitLab CI (`.gitlab-ci.yml`)
+
+Four-stage pipeline: `build → test → scan → report`.
+
+### Stages
+
+**`build`** — compiles the binary using `.golang:build` from the NextGen catalog step. Injects the version from `plugin.yaml` via `-ldflags`.
+
+**`test`** — two parallel jobs:
+- `go-test`: runs `go vet ./...` then the full test suite via `.golang:test`. Produces `coverage.txt`.
+- `go-fmt`: checks formatting via `.golang:fmt`.
+
+**`scan`** — SonarQube quality gate via the `nextgen-cicd/catalog/step/sonarqube/scan@6` component. Runs only after both test jobs pass.
+
+```yaml
+sonar-scan:
+  needs: [build, go-test, go-fmt]
+  variables:
+    CICD_SONAR_CUSTOM_PARAM: >-
+      -Dsonar.go.coverage.reportPaths=$CI_PROJECT_DIR/coverage.txt
+      -Dsonar.coverage.exclusions=**/*_test.go
+```
+
+The `sonar.coverage.exclusions` flag is required — without it SonarQube counts test file lines in the denominator, which artificially lowers the reported coverage percentage.
+
+**`report`** — posts SonarQube findings (bugs, vulnerabilities, code smells) back to the GitLab MR or branch via `sonar-helper-issues@6`.
 
 ---
 
-## Why this matters
+## Why `sonar.coverage.exclusions` matters
 
-Before this change, helm-spray had:
-- No test files
-- No CI pipeline
-- A release workflow running on a Go version behind the declared minimum
-
-After this change, every push and pull request runs the full test suite automatically, giving contributors immediate feedback and preventing regressions from being merged.
+SonarQube by default includes `*_test.go` files when computing coverage. Since test files contain many lines that are never instrumented by the Go coverage tool, they inflate the "lines to cover" count and suppress the percentage. Adding `-Dsonar.coverage.exclusions=**/*_test.go` excludes them, bringing the reported figure in line with `go tool cover`.
