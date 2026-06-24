@@ -9,13 +9,16 @@ import (
 	"github.com/gemalto/helm-spray/v4/pkg/helm"
 	"github.com/gemalto/helm-spray/v4/pkg/kubectl"
 	"github.com/gemalto/helm-spray/v4/pkg/util"
+	helmChart "helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
 	cliValues "helm.sh/helm/v3/pkg/cli/values"
 	"io/ioutil"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -64,6 +67,14 @@ func (s *Spray) Spray() error {
 		return fmt.Errorf("merging values: %w", err)
 	}
 	if len(updatedChartValuesAsString) > 0 {
+		// Strip helm-spray-owned keys (e.g. "weight") so the temp values file
+		// passed to "helm upgrade -f" does not trip values.schema.json
+		// validation when the umbrella chart ships a strict schema. The
+		// in-memory mergedValues used below for ordering decisions is intact.
+		updatedChartValuesAsString, err = values.StripSprayKeys(updatedChartValuesAsString, chart)
+		if err != nil {
+			return fmt.Errorf("stripping spray-owned keys from values: %w", err)
+		}
 		// Write default values to a temporary file and add it to the list of values files,
 		// for later usage during the calls to helm
 		tempDir, err := ioutil.TempDir("", "spray-")
@@ -98,6 +109,20 @@ func (s *Spray) Spray() error {
 		return fmt.Errorf("analyzing dependencies: %w", err)
 	}
 
+	// Materialise a sanitised copy of the chart in a temp directory. Helm
+	// validates the COALESCED values document (chart defaults + overlays + set
+	// flags) against values.schema.json, so leaving "weight" in the chart's
+	// on-disk values.yaml — even when overlays have been stripped — still
+	// trips schema validation. Writing a stripped copy of the chart and
+	// pointing "helm upgrade" at that copy closes the validation hole.
+	// "deps" above has already captured the weights, so it is safe to mutate
+	// the chart's in-memory values now.
+	strippedChartPath, cleanupChart, err := materialiseStrippedChart(chart)
+	if err != nil {
+		return fmt.Errorf("materialising stripped chart: %w", err)
+	}
+	defer cleanupChart()
+
 	// Starting the processing...
 	if len(releasePrefix) > 0 {
 		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases releasePrefix \"%s-\"", s.ChartName, s.Namespace, releasePrefix)
@@ -121,7 +146,7 @@ func (s *Spray) Spray() error {
 
 	// Loop on the increasing weight
 	for i := 0; i <= maxWeight(deps); i++ {
-		shouldWait, err := s.upgrade(releases, deps, i)
+		shouldWait, err := s.upgrade(releases, deps, i, strippedChartPath)
 		if err != nil {
 			return err
 		}
@@ -139,7 +164,7 @@ func (s *Spray) Spray() error {
 	return nil
 }
 
-func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int) (bool, error) {
+func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int, chartPath string) (bool, error) {
 	shouldWait := false
 	firstInWeight := true
 	// Upgrade the targeted Deployments corresponding the the current weight
@@ -182,7 +207,7 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 					s.Namespace,
 					s.CreateNamespace,
 					dependency.CorrespondingReleaseName,
-					s.ChartName,
+					chartPath,
 					s.ResetValues,
 					s.ReuseValues,
 					s.ValuesOpts.ValueFiles,
@@ -385,6 +410,98 @@ func logRelease(releases map[string]helm.Release, deps []dependencies.Dependency
 		_, _ = fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
 	}
 	_ = w.Flush()
+}
+
+// materialiseStrippedChart writes a sanitised copy of the loaded chart to a
+// fresh temp directory, with helm-spray-owned keys (currently "weight")
+// removed from the umbrella's values.yaml and from each direct subchart's
+// values.yaml. The returned path is suitable for passing to "helm upgrade".
+//
+// Why this exists: Helm validates the COALESCED values document against
+// values.schema.json, which means the chart's on-disk values are part of the
+// validation surface. Stripping only the overlay file we hand to "helm -f" is
+// not enough — the schema still trips on "weight" coming from the chart's own
+// values.yaml. Pointing helm at a sanitised chart copy is the only way to
+// keep umbrella charts with strict schemas working.
+//
+// chartutil.SaveDir writes values.yaml from chrt.Raw (the raw file bytes),
+// not from chrt.Values, so we mutate Raw rather than the parsed map.
+// Callers must have already extracted any spray-owned data they need
+// (deployment order) before invoking this.
+func materialiseStrippedChart(chrt *helmChart.Chart) (string, func(), error) {
+	noop := func() {}
+
+	// Rewrite the umbrella's values.yaml bytes in Raw, stripping <dep>.weight
+	// for each declared dependency.
+	if err := stripWeightFromRawValues(chrt, true); err != nil {
+		return "", noop, fmt.Errorf("stripping umbrella values: %w", err)
+	}
+	// Rewrite each direct subchart's values.yaml bytes in Raw, stripping
+	// a top-level "weight" key (which becomes <dep>.weight after coalesce).
+	for _, sub := range chrt.Dependencies() {
+		if err := stripWeightFromRawValues(sub, false); err != nil {
+			return "", noop, fmt.Errorf("stripping subchart %q values: %w", sub.Name(), err)
+		}
+	}
+
+	tmpParent, err := os.MkdirTemp("", "spray-chart-")
+	if err != nil {
+		return "", noop, fmt.Errorf("creating temp chart dir: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpParent) }
+
+	if err := chartutil.SaveDir(chrt, tmpParent); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("writing stripped chart to temp dir: %w", err)
+	}
+
+	return filepath.Join(tmpParent, chrt.Name()), cleanup, nil
+}
+
+// stripWeightFromRawValues finds values.yaml in chrt.Raw and rewrites it with
+// the "weight" key removed. For the umbrella (umbrella=true) it strips
+// <usedName>.weight for each declared dependency; for a subchart it strips
+// the top-level "weight" key.
+func stripWeightFromRawValues(chrt *helmChart.Chart, umbrella bool) error {
+	for i, f := range chrt.Raw {
+		if f.Name != chartutil.ValuesfileName {
+			continue
+		}
+		parsed, err := chartutil.ReadValues(f.Data)
+		if err != nil {
+			return fmt.Errorf("parsing values.yaml: %w", err)
+		}
+		changed := false
+		if umbrella {
+			for _, dep := range chrt.Metadata.Dependencies {
+				usedName := dep.Alias
+				if usedName == "" {
+					usedName = dep.Name
+				}
+				if sub, ok := parsed[usedName].(map[string]interface{}); ok {
+					if _, has := sub["weight"]; has {
+						delete(sub, "weight")
+						changed = true
+					}
+				}
+			}
+		} else {
+			if _, has := parsed["weight"]; has {
+				delete(parsed, "weight")
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		cleaned, err := parsed.YAML()
+		if err != nil {
+			return fmt.Errorf("re-serialising values.yaml: %w", err)
+		}
+		chrt.Raw[i].Data = []byte(cleaned)
+		return nil
+	}
+	return nil
 }
 
 func removeTempDir(tempDir string) {

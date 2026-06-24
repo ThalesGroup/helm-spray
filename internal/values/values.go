@@ -183,6 +183,53 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 	return chartValues, nil
 }
 
+// SprayValuesKeys lists the keys that helm-spray reads from values.yaml as
+// out-of-band metadata for its own use (currently: deployment ordering). These
+// keys are not part of any chart's templating contract and must be stripped
+// from the values document handed to "helm upgrade" so that umbrella charts
+// shipping a strict values.schema.json (additionalProperties: false) do not
+// fail validation.
+var SprayValuesKeys = []string{"weight"}
+
+// StripSprayKeys removes helm-spray-owned keys from a YAML values document for
+// each dependency declared by the umbrella chart. The in-memory values map
+// used by helm-spray for ordering decisions is unaffected; only the textual
+// representation handed to "helm upgrade -f" is.
+func StripSprayKeys(yamlStr string, chrt *chart.Chart) (string, error) {
+	if yamlStr == "" || chrt == nil || len(chrt.Metadata.Dependencies) == 0 {
+		return yamlStr, nil
+	}
+	parsed, err := chartutil.ReadValues([]byte(yamlStr))
+	if err != nil {
+		return "", fmt.Errorf("parsing values for spray-key stripping: %w", err)
+	}
+	changed := false
+	for _, req := range chrt.Metadata.Dependencies {
+		usedName := req.Alias
+		if usedName == "" {
+			usedName = req.Name
+		}
+		sub, err := parsed.Table(usedName)
+		if err != nil {
+			continue
+		}
+		for _, key := range SprayValuesKeys {
+			if _, ok := sub[key]; ok {
+				delete(sub, key)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return yamlStr, nil
+	}
+	cleaned, err := parsed.YAML()
+	if err != nil {
+		return "", fmt.Errorf("re-serialising values after spray-key stripping: %w", err)
+	}
+	return cleaned, nil
+}
+
 func mergeMaps(a, b map[string]interface{}) map[string]interface{} {
 	out := make(map[string]interface{}, len(a))
 	for k, v := range a {
