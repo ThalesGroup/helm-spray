@@ -48,7 +48,7 @@ Please follow this [page](https://kubernetes.io/docs/tasks/tools/install-kubectl
 ```
 
 Helm Spray shall always be called on the umbrella chart, whatever it is for upgrading the full set of charts, or for upgrading individual sub-charts (using the `--target` option).
-For a proper usage of helm spray, the umbrella chart shall have a `requirements.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled`.
+For a proper usage of helm spray, the umbrella chart shall have a `requirements.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled` (recommended convention). Helm Spray now supports Helm Conditions — if a dependency has a condition path set, Helm Spray will use that path to control whether the sub-chart is enabled. If the condition resolves to `false` in the values, the sub-chart will be skipped with a warning.
 Here is an example of `requirements.yaml` file for an umbrella chart having three sub-charts, one of them having an alias:
 ```
 dependencies:

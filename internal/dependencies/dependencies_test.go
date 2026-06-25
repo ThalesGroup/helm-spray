@@ -149,3 +149,83 @@ func TestTags(t *testing.T) {
 		})
 	}
 }
+
+func TestCondition(t *testing.T) {
+	tests := []struct {
+		name            string
+		chart           *chartv2.Chart
+		expectedPaths   map[string]string // UsedName -> expected Condition path
+	}{
+		{
+			name: "standard condition path",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Condition: "sub1.enabled"},
+				{Name: "sub2", Version: "0.2.0", Condition: "sub2.enabled"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "sub1.enabled",
+				"sub2": "sub2.enabled",
+			},
+		},
+		{
+			name: "non-standard condition path",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Condition: "sub1.features.logging"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "sub1.features.logging",
+			},
+		},
+		{
+			name: "empty condition falls back to UsedName.enabled",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "", // Empty, will fall back to UsedName.enabled in upgrade()
+			},
+		},
+		{
+			name: "alias with condition",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "micro-service-1", Version: "0.1.0", Alias: "ms1", Condition: "ms1.enabled"},
+			}),
+			expectedPaths: map[string]string{
+				"ms1": "ms1.enabled",
+			},
+		},
+		{
+			name: "comma-delimited condition uses first path",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Condition: "sub1.enabled,global.sub1.enabled"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "sub1.enabled,global.sub1.enabled",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chrt := chart.Charter(tt.chart)
+			values := make(map[string]interface{})
+			vals := &values
+
+			result, err := Get(chrt, vals, []string{}, []string{}, "", false)
+			if err != nil {
+				t.Fatalf("Get() error = %v", err)
+			}
+
+			for _, dep := range result {
+				expectedPath, ok := tt.expectedPaths[dep.UsedName]
+				if !ok {
+					t.Errorf("unexpected dependency %q", dep.UsedName)
+					continue
+				}
+				if dep.Condition != expectedPath {
+					t.Errorf("dependency %q Condition = %q, want %q", dep.UsedName, dep.Condition, expectedPath)
+				}
+			}
+		})
+	}
+}

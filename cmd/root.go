@@ -45,7 +45,7 @@ nor '--set', use '--set-file' to read the single large value from file.
 
 You can specify the '--values'/'-f' flag several times or provide a single comma separated value.
 You can specify the '--set' flag several times or provide a single comma separated value.
-Helm Spray does not support Helm Conditions, but supports Helm Tags, with some restrictions.
+ Helm Spray now supports Helm Conditions, in addition to Helm Tags, with some restrictions.
 
 To check the generated manifests of a release without installing the chart,
 the '--debug' and '--dry-run' flags can be combined. This will still require a

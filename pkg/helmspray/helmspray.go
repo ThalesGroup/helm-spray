@@ -9,6 +9,7 @@ import (
 	"github.com/gemalto/helm-spray/v4/pkg/helm"
 	"github.com/gemalto/helm-spray/v4/pkg/kubectl"
 	"github.com/gemalto/helm-spray/v4/pkg/util"
+	"helm.sh/helm/v4/pkg/chart/common"
 	"helm.sh/helm/v4/pkg/chart/loader"
 	cliValues "helm.sh/helm/v4/pkg/cli/values"
 	appsv1 "k8s.io/api/apps/v1"
@@ -120,7 +121,7 @@ func (s *Spray) Spray() error {
 
 	// Loop on the increasing weight
 	for i := 0; i <= maxWeight(deps); i++ {
-		shouldWait, err := s.upgrade(releases, deps, i)
+		shouldWait, err := s.upgrade(releases, deps, i, &mergedValues)
 		if err != nil {
 			return err
 		}
@@ -138,7 +139,7 @@ func (s *Spray) Spray() error {
 	return nil
 }
 
-func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int) (bool, error) {
+func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int, mergedValues *common.Values) (bool, error) {
 	shouldWait := false
 	firstInWeight := true
 	// Upgrade the targeted Deployments corresponding the the current weight
@@ -163,14 +164,40 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 
 				shouldWait = true
 
-				// Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
+				// Add condition flags to ensure that only the current chart is to be executed
 				depValuesSet := ""
+				skipped := false
 				for _, dep := range deps {
-					if dep.UsedName == dependency.UsedName {
-						depValuesSet = depValuesSet + dep.UsedName + ".enabled=true,"
-					} else {
-						depValuesSet = depValuesSet + dep.UsedName + ".enabled=false,"
+					// Use the condition path from Chart.yaml, falling back to <usedName>.enabled
+					conditionPath := dep.Condition
+					if conditionPath == "" {
+						conditionPath = dep.UsedName + ".enabled"
 					}
+					// Handle comma-delimited condition paths (use first one)
+					if idx := strings.IndexByte(conditionPath, ','); idx >= 0 {
+						conditionPath = conditionPath[:idx]
+					}
+
+					if dep.UsedName == dependency.UsedName {
+						// Check if user has explicitly set this condition to false
+						val, err := mergedValues.PathValue(conditionPath)
+						if err == nil {
+							if boolVal, ok := val.(bool); ok && !boolVal {
+								log.Info(1, "skipping sub-chart \"%s\": condition \"%s\" is set to false",
+									dependency.UsedName, conditionPath)
+								skipped = true
+								break
+							}
+						}
+						depValuesSet = depValuesSet + conditionPath + "=true,"
+					} else {
+						depValuesSet = depValuesSet + conditionPath + "=false,"
+					}
+				}
+
+				if skipped {
+					shouldWait = false
+					continue
 				}
 				var valuesSet []string
 				valuesSet = append(valuesSet, s.ValuesOpts.Values...)

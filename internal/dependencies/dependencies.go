@@ -14,6 +14,7 @@ type Dependency struct {
 	Name                     string
 	Alias                    string
 	UsedName                 string
+	Condition                string
 	AppVersion               string
 	Targeted                 bool
 	Weight                   int
@@ -42,6 +43,16 @@ func Get(chrt chart.Charter, values *common.Values, targets []string, excludes [
 			dependencies[i].UsedName = dependencies[i].Name
 		} else {
 			dependencies[i].UsedName = dependencies[i].Alias
+		}
+
+		// Store the condition path from Chart.yaml
+		dependencies[i].Condition = req.Condition
+		if req.Condition != "" {
+			expectedPath := dependencies[i].UsedName + ".enabled"
+			if req.Condition != expectedPath {
+				log.Info(2, "dependency \"%s\" has non-standard condition path \"%s\" (expected \"%s\")",
+					dependencies[i].UsedName, req.Condition, expectedPath)
+			}
 		}
 
 		// Is dependency targeted?
