@@ -4,6 +4,7 @@ set -eu
 CLUSTER_NAME="${CLUSTER_NAME:-spray-test}"
 NAMESPACE="${NAMESPACE:-spray-itest-$$}"
 USE_EXISTING_CLUSTER="${USE_EXISTING_CLUSTER:-1}"
+CREATE_NAMESPACE="${CREATE_NAMESPACE:-}"
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/helm-spray-itest.XXXXXX")"
 HELM_PLUGINS_DIR="${WORK_DIR}/helm-plugins"
@@ -15,7 +16,9 @@ CREATED_NAMESPACE=0
 #
 # By default the script uses the current kubectl context, such as an AKS test
 # cluster. Set USE_EXISTING_CLUSTER=0 to create or reuse a local kind cluster
-# named by CLUSTER_NAME.
+# named by CLUSTER_NAME. On existing clusters, pass NAMESPACE for a namespace
+# where your user can list/create/update/delete Helm release Secrets and create
+# ConfigMaps. Set CREATE_NAMESPACE=1 only when your user may create namespaces.
 
 cleanup() {
     if [ "${KEEP_NAMESPACE:-0}" != "1" ] && [ "${CREATED_NAMESPACE}" = "1" ]; then
@@ -76,6 +79,42 @@ expect_failure() {
         exit 1
     fi
     printf '%s\n' "${output}"
+}
+
+check_can_i() {
+    verb="$1"
+    resource="$2"
+    if ! kubectl auth can-i "${verb}" "${resource}" --namespace "${NAMESPACE}" >/dev/null 2>&1; then
+        echo "Missing Kubernetes permission in namespace \"${NAMESPACE}\": ${verb} ${resource}" >&2
+        return 1
+    fi
+}
+
+preflight_namespace_permissions() {
+    if [ "${USE_EXISTING_CLUSTER}" != "1" ]; then
+        return
+    fi
+
+    missing=0
+    for verb in get list create update patch delete; do
+        check_can_i "${verb}" secrets || missing=1
+    done
+    for verb in get list create update patch delete; do
+        check_can_i "${verb}" configmaps || missing=1
+    done
+
+    if [ "${missing}" = "1" ]; then
+        cat >&2 <<EOF
+
+Helm stores release state in Kubernetes Secrets by default. Helm Spray calls
+'helm list' and 'helm upgrade --install', so the test user needs Secret access
+in namespace "${NAMESPACE}".
+
+Ask a cluster admin for a Role/RoleBinding in that fixed namespace, or run this
+test in a namespace where your user has Helm release permissions.
+EOF
+        exit 1
+    fi
 }
 
 write_chart() {
@@ -165,7 +204,6 @@ export HELM_PLUGINS="${HELM_PLUGINS_DIR}"
 
 if [ "${USE_EXISTING_CLUSTER}" = "1" ]; then
     log "Using current kubectl context"
-    kubectl cluster-info >/dev/null
 elif [ "${USE_EXISTING_CLUSTER}" = "0" ]; then
     if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
         kind create cluster --name "${CLUSTER_NAME}"
@@ -177,10 +215,24 @@ else
     exit 1
 fi
 
-if ! kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
-    kubectl create namespace "${NAMESPACE}" >/dev/null
-    CREATED_NAMESPACE=1
+if [ -z "${CREATE_NAMESPACE}" ]; then
+    if [ "${USE_EXISTING_CLUSTER}" = "0" ]; then
+        CREATE_NAMESPACE=1
+    else
+        CREATE_NAMESPACE=0
+    fi
 fi
+
+if ! kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
+    if [ "${CREATE_NAMESPACE}" = "1" ]; then
+        kubectl create namespace "${NAMESPACE}" >/dev/null
+        CREATED_NAMESPACE=1
+    else
+        log "Skipping namespace creation for ${NAMESPACE}"
+    fi
+fi
+
+preflight_namespace_permissions
 
 CHART_DIR="${WORK_DIR}/chart"
 write_chart "${CHART_DIR}"

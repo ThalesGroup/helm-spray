@@ -21,7 +21,7 @@ helm4-smoke:
 	scripts/helm4_smoke_test.sh
 
 helm4-integration:
-	scripts/helm4_integration_tests.sh
+	USE_EXISTING_CLUSTER=0 scripts/helm4_integration_tests.sh
 
 clean:
 	rm -rf bin $(DIST)

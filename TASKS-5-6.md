@@ -98,17 +98,21 @@ The integration script uses a fresh namespace by default and adds assertions for
 - invalid target failure.
 - conflicting `--target` and `--exclude` failure.
 
-By default the script uses the current Kubernetes context, such as AKS. To run
-against AKS and keep the namespace for inspection:
+By default the script uses the current Kubernetes context, such as AKS, and does
+not create namespaces. To run against a fixed AKS namespace and keep resources
+for inspection:
 
 ```sh
-KEEP_NAMESPACE=1 NAMESPACE=spray-itest scripts/helm4_integration_tests.sh
+KEEP_NAMESPACE=1 NAMESPACE=default scripts/helm4_integration_tests.sh
 ```
+
+The user running the test must be able to list/create/update/delete Helm release
+Secrets and test ConfigMaps in that namespace.
 
 To force a local kind cluster:
 
 ```sh
-USE_EXISTING_CLUSTER=0 scripts/helm4_integration_tests.sh
+make helm4-integration
 ```
 
 ### Cleanup
