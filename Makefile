@@ -1,32 +1,41 @@
 VERSION := $(shell sed -n -e 's/version:[ "]*\([^"]*\).*/\1/p' plugin.yaml)
 DIST := $(CURDIR)/_dist
-LDFLAGS := "-X main.version=${VERSION}"
-TAR_LINUX := "helm-spray-linux-amd64.tar.gz"
-TAR_WINDOWS := "helm-spray-windows-amd64.tar.gz"
-TAR_DARWIN := "helm-spray-darwin-amd64.tar.gz"
-BINARY_LINUX := "helm-spray"
-BINARY_WINDOWS := "helm-spray.exe"
-BINARY_DARWIN := "helm-spray"
+LDFLAGS := -s -w -X github.com/gemalto/helm-spray/v4/cmd.version=$(VERSION)
+DIST_TARGETS := dist_linux_amd64 dist_linux_arm64 dist_darwin_amd64 dist_darwin_arm64 dist_windows_amd64
 
-.PHONY: dist
+BINARY_linux := helm-spray
+BINARY_darwin := helm-spray
+BINARY_windows := helm-spray.exe
 
-dist: dist_darwin dist_linux dist_windows
+.PHONY: build clean dist helm4-integration helm4-smoke test $(DIST_TARGETS)
 
-dist_darwin:
-	mkdir -p $(DIST)
-	GOOS=darwin GOARCH=amd64 go get -t -v ./...
-	GOOS=darwin GOARCH=amd64 go build -o bin/$(BINARY_DARWIN) -ldflags $(LDFLAGS) main.go
-	tar -czvf $(DIST)/$(TAR_DARWIN) bin README.md LICENSE plugin.yaml
+build:
+	CGO_ENABLED=0 go build -trimpath -o bin/helm-spray -ldflags "$(LDFLAGS)" main.go
 
-dist_linux:
-	mkdir -p $(DIST)
-	GOOS=linux GOARCH=amd64 go get -t -v ./...
-	GOOS=linux GOARCH=amd64 go build -o bin/$(BINARY_LINUX) -ldflags $(LDFLAGS) main.go
-	tar -czvf $(DIST)/$(TAR_LINUX) bin README.md LICENSE plugin.yaml
+test:
+	go test ./...
 
-.PHONY: dist_windows
-dist_windows:
-	mkdir -p $(DIST)
-	GOOS=windows GOARCH=amd64 go get -t -v ./...
-	GOOS=windows GOARCH=amd64 go build -o bin/$(BINARY_WINDOWS) -ldflags $(LDFLAGS) main.go
-	tar -czvf $(DIST)/${TAR_WINDOWS} bin README.md LICENSE plugin.yaml
+dist: clean test $(DIST_TARGETS)
+
+helm4-smoke:
+	scripts/helm4_smoke_test.sh
+
+helm4-integration:
+	scripts/helm4_integration_tests.sh
+
+clean:
+	rm -rf bin $(DIST)
+
+define build_archive
+dist_$(1)_$(2):
+	mkdir -p $(DIST)/$(1)-$(2)/bin
+	CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go build -trimpath -o $(DIST)/$(1)-$(2)/bin/$$(BINARY_$(1)) -ldflags "$(LDFLAGS)" main.go
+	cp README.md LICENSE plugin.yaml $(DIST)/$(1)-$(2)/
+	tar -C $(DIST)/$(1)-$(2) -czvf $(DIST)/helm-spray-$(1)-$(2).tar.gz bin README.md LICENSE plugin.yaml
+endef
+
+$(eval $(call build_archive,linux,amd64))
+$(eval $(call build_archive,linux,arm64))
+$(eval $(call build_archive,darwin,amd64))
+$(eval $(call build_archive,darwin,arm64))
+$(eval $(call build_archive,windows,amd64))

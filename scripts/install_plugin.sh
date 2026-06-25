@@ -3,13 +3,28 @@
 # shellcheck disable=SC2002
 version="$(cat plugin.yaml | grep "version" | cut -d ' ' -f 2)"
 os=$(uname)
-echo "Downloading and installing spray v${version} for ${os}..."
+arch=$(uname -m)
+
+case "${arch}" in
+    x86_64|amd64)
+        arch="amd64"
+        ;;
+    arm64|aarch64)
+        arch="arm64"
+        ;;
+    *)
+        echo "Unsupported architecture: ${arch}" >&2
+        exit 1
+        ;;
+esac
+
+echo "Downloading and installing spray v${version} for ${os}/${arch}..."
 
 url=""
 if [ "${os}" = "Linux" ] ; then
-    url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-linux-amd64.tar.gz"
+    url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-linux-${arch}.tar.gz"
 elif [ "${os}" = "Darwin" ] ; then
-   url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-darwin-amd64.tar.gz"
+    url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-darwin-${arch}.tar.gz"
 else
     url="https://github.com/ThalesGroup/helm-spray/releases/download/v${version}/helm-spray-windows-amd64.tar.gz"
 fi
