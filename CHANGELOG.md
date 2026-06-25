@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 4.0.14 - 06/25/2026
+## Version 5.0.0 - 06/25/2026
 * Added portable release builds for Linux arm64, Darwin arm64, and static Linux compatibility
 * Added Helm 4 smoke and integration test scripts
 * Updated dry-run handling for Helm 4 compatibility

@@ -16,6 +16,7 @@ Each sub-chart is deployed under a specific Release named `<chart name or alias>
 ## Compatibility with helm
 - helm-spray v3.x releases are only compatible with helm v2.x
 - helm-spray v4.x releases are only compatible with helm v3.x
+- helm-spray v5.x releases are compatible with helm v4.x through the legacy CLI plugin path
 
 ## Continuous Integration & Delivery
 
