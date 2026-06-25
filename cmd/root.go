@@ -103,7 +103,7 @@ func NewRootCmd() *cobra.Command {
 				}
 			}
 
-			if s.PrefixReleasesWithNamespace == true && s.PrefixReleases != "" {
+			if s.PrefixReleasesWithNamespace && s.PrefixReleases != "" {
 				return errors.New("cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 

@@ -5,10 +5,12 @@ go 1.24.0
 toolchain go1.24.1
 
 require (
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/spf13/cobra v1.9.1
-	helm.sh/helm/v3 v3.18.5
+	helm.sh/helm/v4 v4.2.2
 	k8s.io/api v0.33.3
 	k8s.io/client-go v0.33.3
+	sigs.k8s.io/yaml v1.5.0
 )
 
 require (

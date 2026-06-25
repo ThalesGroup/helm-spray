@@ -55,7 +55,13 @@ func AreJobsReady(names []string, namespace string, debug bool) (bool, error) {
 		if debug {
 			log.Info(3, "kubectl output: %s", strResult)
 		}
-		succeeded, _ := strconv.Atoi(strResult)
+		succeeded, err := strconv.Atoi(strResult)
+		if err != nil {
+			if debug {
+				log.Info(3, "job %s: cannot parse succeeded count %q: %v", name, strResult, err)
+			}
+			return false, nil
+		}
 		if succeeded < 1 {
 			if debug {
 				log.Info(3, "job %s is not completed", name)
@@ -81,21 +87,17 @@ func areWorkloadsReady(k8sObjectType string, names []string, namespace string, d
 	if len(names) == 0 {
 		return true, nil
 	}
-	if debug {
-		template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{printf \"{name: %s, ready: %d, current: %d, updated: %d}\" .metadata.name $ready $current $updated}}")
-		log.Info(3, "kubectl template: %s", template)
-		cmd := exec.Command("kubectl", "--namespace", namespace, "get", k8sObjectType, "-o", "go-template="+template)
-		cmd.Stderr = os.Stderr
-		result, err := cmd.Output()
-		if err != nil {
-			// Activating debug logs should not generate additional errors so let's only warn the user and go further
-			// If there is a real error linked to kubectl execution, it will pop up just after
-			log.Info(3, "warning: cannot get kubectl output because of an error (%s)", err)
-		} else {
-			log.Info(3, "kubectl output: %s", string(result))
-		}
+
+	// Use different readiness checks for Deployments vs StatefulSets:
+	// - Deployments: check readyReplicas and unavailableReplicas
+	// - StatefulSets: check readyReplicas and currentReplicas (not updatedReplicas, which is wrong for OnDelete strategy - issue #58)
+	var template string
+	if k8sObjectType == "deployment" {
+		template = generateTemplate(names, `{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$unavail := 0}}{{if .status.unavailableReplicas}}{{$unavail = .status.unavailableReplicas}}{{end}}{{if or (lt $ready .spec.replicas) (gt $unavail 0)}}{{printf "%s " .metadata.name}}{{end}}`)
+	} else {
+		template = generateTemplate(names, `{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{if or (lt $ready .spec.replicas) (lt $current .spec.replicas)}}{{printf "%s " .metadata.name}}{{end}}`)
 	}
-	template := generateTemplate(names, "{{$ready := 0}}{{if .status.readyReplicas}}{{$ready = .status.readyReplicas}}{{end}}{{$current := .spec.replicas}}{{if .status.currentReplicas}}{{$current = .status.currentReplicas}}{{end}}{{$updated := 0}}{{if .status.updatedReplicas}}{{$updated = .status.updatedReplicas}}{{end}}{{if or (lt $ready .spec.replicas) (lt $current .spec.replicas) (lt $updated .spec.replicas)}}{{printf \"%s \" .metadata.name}}{{end}}")
+
 	if debug {
 		log.Info(3, "kubectl template: %s", template)
 	}

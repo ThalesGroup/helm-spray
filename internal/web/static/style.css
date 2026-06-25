@@ -1,0 +1,259 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+}
+
+header {
+    background: #16213e;
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    border-bottom: 2px solid #0f3460;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    color: #e94560;
+}
+
+nav {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tab-btn {
+    background: transparent;
+    border: 1px solid #0f3460;
+    color: #aaa;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    background: #0f3460;
+    color: #fff;
+}
+
+.tab-btn.active {
+    background: #e94560;
+    border-color: #e94560;
+    color: #fff;
+}
+
+main {
+    padding: 1.5rem 2rem;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.panel {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.panel h2 {
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    color: #e94560;
+}
+
+.btn {
+    background: #0f3460;
+    border: 1px solid #1a1a4e;
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn:hover {
+    background: #1a1a4e;
+}
+
+.btn.primary {
+    background: #e94560;
+    border-color: #e94560;
+}
+
+.btn.primary:hover {
+    background: #c73652;
+}
+
+.chart-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.chart-item {
+    padding: 0.75rem 1rem;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.chart-item:hover {
+    background: #0f3460;
+}
+
+.chart-item.selected {
+    background: #1a1a4e;
+    border-color: #e94560;
+}
+
+.chart-item h3 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.chart-item p {
+    font-size: 0.85rem;
+    color: #aaa;
+}
+
+.placeholder {
+    color: #666;
+    font-style: italic;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #aaa;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"] {
+    width: 100%;
+    padding: 0.5rem;
+    background: #1a1a2e;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #e94560;
+}
+
+.checkboxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.checkboxes label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #ccc;
+    cursor: pointer;
+}
+
+.log-output {
+    background: #0a0a1a;
+    border-radius: 4px;
+    padding: 1rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.85rem;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+}
+
+.log-line {
+    color: #ccc;
+}
+
+.log-line.error {
+    color: #e94560;
+}
+
+.log-line.info {
+    color: #4ecdc4;
+}
+
+.log-line.debug {
+    color: #888;
+}
+
+/* Table styles for chart details */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #0f3460;
+}
+
+th {
+    color: #e94560;
+    font-weight: 600;
+}
+
+td {
+    color: #ccc;
+}
+
+/* Execution order */
+.execution-order {
+    margin-top: 1rem;
+}
+
+.execution-order h3 {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    color: #4ecdc4;
+}
+
+.execution-step {
+    padding: 0.5rem 1rem;
+    background: #1a1a2e;
+    border-left: 3px solid #4ecdc4;
+    margin-bottom: 0.5rem;
+    border-radius: 0 4px 4px 0;
+}
+
+/* Releases table */
+.releases-section {
+    margin-top: 1.5rem;
+}
+
+.releases-section h3 {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    color: #4ecdc4;
+}

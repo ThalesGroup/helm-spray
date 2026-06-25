@@ -35,12 +35,16 @@ func WithNumberedLines(level int, str string, params ...interface{}) {
 	if len(str) > 0 && !strings.HasSuffix(str, "\n") {
 		numberOfLines++
 	}
+	if numberOfLines == 0 {
+		numberOfLines = 1
+	}
 
 	// Compute the number of digits corresponding to this number of lines, so that the format of eachline is correct
 	numberOfDigits := 0
-	for numberOfLines != 0 {
-		numberOfLines /= 10
-		numberOfDigits = numberOfDigits + 1
+	tmp := numberOfLines
+	for tmp != 0 {
+		tmp /= 10
+		numberOfDigits++
 	}
 	format := "[%" + strconv.Itoa(numberOfDigits) + "d] %s"
 
