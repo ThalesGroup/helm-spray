@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.24', '1.25']
+        go-version: ['1.26']
 
     steps:
       - name: Checkout code
@@ -38,7 +38,6 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
-        if: matrix.go-version == '1.24'
         uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -53,7 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26'
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
@@ -70,7 +69,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26'
 
       - name: Build for Linux
         run: GOOS=linux GOARCH=amd64 go build -o dist/helm-spray-linux-amd64 .
