@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 4.0.14 - 06/25/2026
+* Added portable release builds for Linux arm64, Darwin arm64, and static Linux compatibility
+* Added Helm 4 smoke and integration test scripts
+* Updated dry-run handling for Helm 4 compatibility
+* Updated plugin installer architecture selection
+
 ## Version 4.0.13 - 11/27/2024
 * Bump to helm v3.16.3, k8s.io/api v0.31.3, go 1.22, and k8s.io/client-go v0.31.3
 * Fixed [`#92`](https://github.com/ThalesGroup/helm-spray/issues/92) (barmaths)

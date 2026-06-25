@@ -110,7 +110,7 @@ func UpgradeWithValues(level int, namespace string, createNamespace bool, releas
 		myargs = append(myargs, "--force")
 	}
 	if dryRun {
-		myargs = append(myargs, "--dry-run")
+		myargs = append(myargs, "--dry-run=client")
 	}
 	if createNamespace {
 		myargs = append(myargs, "--create-namespace")

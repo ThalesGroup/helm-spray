@@ -130,7 +130,7 @@ func tags(values *chartutil.Values, verbose bool) map[string]interface{} {
 	}
 	if verbose {
 		for k, v := range providedTags {
-			log.Info(2, fmt.Sprintf("found tag \"%s: %s\"", k, fmt.Sprint(v)))
+			log.Info(2, "found tag \"%s: %s\"", k, fmt.Sprint(v))
 		}
 	}
 	return providedTags

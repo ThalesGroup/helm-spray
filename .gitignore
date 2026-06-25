@@ -1,2 +1,4 @@
 vendor/
 .idea/
+bin/
+_dist/
