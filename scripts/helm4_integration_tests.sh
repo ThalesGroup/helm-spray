@@ -11,14 +11,15 @@ HELM_PLUGINS_DIR="${WORK_DIR}/helm-plugins"
 CREATED_NAMESPACE=0
 
 # Usage:
-#   scripts/helm4_integration_tests.sh
+#   KEEP_NAMESPACE=1 NAMESPACE=customer-namespaces scripts/helm4_integration_tests.sh
 #   USE_EXISTING_CLUSTER=0 scripts/helm4_integration_tests.sh
 #
 # By default the script uses the current kubectl context, such as an AKS test
-# cluster. Set USE_EXISTING_CLUSTER=0 to create or reuse a local kind cluster
-# named by CLUSTER_NAME. On existing clusters, pass NAMESPACE for a namespace
-# where your user can list/create/update/delete Helm release Secrets and create
-# ConfigMaps. Set CREATE_NAMESPACE=1 only when your user may create namespaces.
+# cluster, and does not create namespaces. On existing clusters, pass NAMESPACE
+# for a namespace where your user can list/create/update/delete Helm release
+# Secrets and create ConfigMaps. Set USE_EXISTING_CLUSTER=0 to create or reuse a
+# local kind cluster named by CLUSTER_NAME. Set CREATE_NAMESPACE=1 only when
+# your user may create namespaces.
 
 cleanup() {
     if [ "${KEEP_NAMESPACE:-0}" != "1" ] && [ "${CREATED_NAMESPACE}" = "1" ]; then

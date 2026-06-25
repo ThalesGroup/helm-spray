@@ -77,13 +77,9 @@ directory, creates or reuses a kind cluster, generates a two-subchart umbrella
 chart, and checks normal, `--target`, `--exclude`, and `--dry-run --debug`
 flows.
 
-### Suggested Integration Test
+### Integration Test Procedures
 
-```sh
-make helm4-integration
-```
-
-The integration script uses a fresh namespace by default and adds assertions for:
+The integration script adds assertions for:
 
 - Helm 4 legacy plugin registration.
 - Baseline weighted install.
@@ -98,26 +94,57 @@ The integration script uses a fresh namespace by default and adds assertions for
 - invalid target failure.
 - conflicting `--target` and `--exclude` failure.
 
-By default the script uses the current Kubernetes context, such as AKS, and does
-not create namespaces. To run against a fixed AKS namespace and keep resources
-for inspection:
+#### iMac Local Test
 
-```sh
-KEEP_NAMESPACE=1 NAMESPACE=default scripts/helm4_integration_tests.sh
-```
-
-The user running the test must be able to list/create/update/delete Helm release
-Secrets and test ConfigMaps in that namespace.
-
-To force a local kind cluster:
+Use the make target. It forces kind mode, creates a disposable namespace, and
+cleans that namespace automatically:
 
 ```sh
 make helm4-integration
 ```
 
-### Cleanup
+Equivalent direct command:
+
+```sh
+USE_EXISTING_CLUSTER=0 scripts/helm4_integration_tests.sh
+```
+
+Local cleanup:
 
 ```sh
 kind delete cluster --name spray-test
 colima stop
 ```
+
+#### Azure Kubernetes Node Test
+
+Use the fixed namespace assigned to your Azure identity. Do not rely on the
+current kubectl namespace; pass `NAMESPACE` explicitly:
+
+```sh
+KEEP_NAMESPACE=1 NAMESPACE=customer-namespaces scripts/helm4_integration_tests.sh
+```
+
+Replace `customer-namespaces` with the fixed namespace you are allowed to use.
+`KEEP_NAMESPACE=1` leaves resources behind for inspection.
+
+Azure inspection:
+
+```sh
+helm -n customer-namespaces list
+kubectl -n customer-namespaces get configmaps
+```
+
+Azure cleanup, preserving non-test releases such as `echo`:
+
+```sh
+helm -n customer-namespaces uninstall \
+  app-a app-b app-c \
+  tagskip-app-a tagskip-app-c \
+  pref-app-a pref-app-b pref-app-c \
+  customer-namespaces-app-c \
+  vals-app-a
+```
+
+The Azure user running the test must be able to list/create/update/delete Helm
+release Secrets and test ConfigMaps in that namespace.
