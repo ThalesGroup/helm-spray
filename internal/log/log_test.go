@@ -126,9 +126,7 @@ func TestWithNumberedLines(t *testing.T) {
 			name:  "empty string",
 			level: 1,
 			str:   "",
-			expected: []string{
-				"[spray] [0] ",
-			},
+			expected: []string{},
 		},
 		{
 			name:  "trailing newline",
@@ -146,7 +144,11 @@ func TestWithNumberedLines(t *testing.T) {
 			output := captureStdout(func() {
 				WithNumberedLines(tt.level, tt.str)
 			})
-			lines := strings.Split(strings.TrimSpace(output), "\n")
+			output = strings.TrimSpace(output)
+			var lines []string
+			if output != "" {
+				lines = strings.Split(output, "\n")
+			}
 			if len(lines) != len(tt.expected) {
 				t.Errorf("WithNumberedLines() produced %d lines, want %d", len(lines), len(tt.expected))
 				return
