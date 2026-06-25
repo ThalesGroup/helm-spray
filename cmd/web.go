@@ -7,8 +7,8 @@ import (
 )
 
 var (
-	webAddr     string
-	webChartDir string
+	webAddr      string
+	webChartDir  string
 	webNamespace string
 )
 
@@ -23,7 +23,7 @@ var webCmd = &cobra.Command{
 	},
 }
 
-func init() {
+func AddWebCommand(rootCmd *cobra.Command) {
 	webCmd.Flags().StringVar(&webAddr, "addr", ":8080", "Address to listen on")
 	webCmd.Flags().StringVar(&webChartDir, "chart-dir", ".", "Directory containing charts")
 	webCmd.Flags().StringVar(&webNamespace, "namespace", "default", "Kubernetes namespace")

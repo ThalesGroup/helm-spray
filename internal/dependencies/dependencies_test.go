@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"helm.sh/helm/v4/pkg/chart"
+	"helm.sh/helm/v4/pkg/chart/common"
 	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 )
 
@@ -76,10 +77,12 @@ func TestGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			chrt := chart.Charter(tt.chart)
-			values := make(map[string]interface{})
-			vals := &values
+			vals, err := common.ReadValues([]byte("spray:\n  weights:\n    sub1: 0\n    sub2: 0\n    ms1: 0"))
+			if err != nil {
+				t.Fatalf("ReadValues error = %v", err)
+			}
 
-			result, err := Get(chrt, vals, tt.targets, tt.excludes, "", false)
+			result, err := Get(chrt, &vals, tt.targets, tt.excludes, "", false)
 			if tt.expectError {
 				if err == nil {
 					t.Error("Get() expected error, got nil")
@@ -101,7 +104,7 @@ func TestGet(t *testing.T) {
 func TestTags(t *testing.T) {
 	tests := []struct {
 		name     string
-		values   map[string]interface{}
+		values   common.Values
 		expected map[string]interface{}
 	}{
 		{
@@ -208,10 +211,12 @@ func TestCondition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			chrt := chart.Charter(tt.chart)
-			values := make(map[string]interface{})
-			vals := &values
+			vals, err := common.ReadValues([]byte("spray:\n  weights:\n    sub1: 0\n    sub2: 0\n    ms1: 0"))
+			if err != nil {
+				t.Fatalf("ReadValues error = %v", err)
+			}
 
-			result, err := Get(chrt, vals, []string{}, []string{}, "", false)
+			result, err := Get(chrt, &vals, []string{}, []string{}, "", false)
 			if err != nil {
 				t.Fatalf("Get() error = %v", err)
 			}

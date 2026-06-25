@@ -181,5 +181,7 @@ func NewRootCmd() *cobra.Command {
 		s.Namespace = "default"
 	}
 
+	AddWebCommand(cmd)
+
 	return cmd
 }
