@@ -3,7 +3,7 @@ set -eu
 
 CLUSTER_NAME="${CLUSTER_NAME:-spray-test}"
 NAMESPACE="${NAMESPACE:-spray-itest-$$}"
-USE_EXISTING_CLUSTER="${USE_EXISTING_CLUSTER:-0}"
+USE_EXISTING_CLUSTER="${USE_EXISTING_CLUSTER:-auto}"
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/helm-spray-itest.XXXXXX")"
 HELM_PLUGINS_DIR="${WORK_DIR}/helm-plugins"
@@ -13,9 +13,10 @@ CREATED_NAMESPACE=0
 #   scripts/helm4_integration_tests.sh
 #   USE_EXISTING_CLUSTER=1 NAMESPACE=spray-itest scripts/helm4_integration_tests.sh
 #
-# By default the script creates or reuses a local kind cluster named by
-# CLUSTER_NAME. Set USE_EXISTING_CLUSTER=1 to run against the current kubectl
-# context, such as an AKS test cluster.
+# By default the script uses the current kubectl context when it is available.
+# If no current cluster is reachable, it creates or reuses a local kind cluster
+# named by CLUSTER_NAME. Set USE_EXISTING_CLUSTER=1 to force the current kubectl
+# context, or USE_EXISTING_CLUSTER=0 to force kind.
 
 cleanup() {
     if [ "${KEEP_NAMESPACE:-0}" != "1" ] && [ "${CREATED_NAMESPACE}" = "1" ]; then
@@ -152,7 +153,16 @@ EOF
 require go
 require helm
 require kubectl
-if [ "${USE_EXISTING_CLUSTER}" != "1" ]; then
+
+if [ "${USE_EXISTING_CLUSTER}" = "auto" ]; then
+    if kubectl cluster-info >/dev/null 2>&1; then
+        USE_EXISTING_CLUSTER=1
+    else
+        USE_EXISTING_CLUSTER=0
+    fi
+fi
+
+if [ "${USE_EXISTING_CLUSTER}" = "0" ]; then
     require kind
 fi
 
@@ -165,12 +175,15 @@ export HELM_PLUGINS="${HELM_PLUGINS_DIR}"
 if [ "${USE_EXISTING_CLUSTER}" = "1" ]; then
     log "Using current kubectl context"
     kubectl cluster-info >/dev/null
-else
+elif [ "${USE_EXISTING_CLUSTER}" = "0" ]; then
     if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
         kind create cluster --name "${CLUSTER_NAME}"
     fi
 
     kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null
+else
+    echo "USE_EXISTING_CLUSTER must be auto, 1, or 0" >&2
+    exit 1
 fi
 
 if ! kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
