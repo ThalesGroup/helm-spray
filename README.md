@@ -9,7 +9,7 @@
 This is a Helm plugin to install or upgrade sub-charts one by one from an umbrella chart.
 
 It works like `helm upgrade --install`, except that it upgrades or installs each sub-charts according to a weight (>=0) set on each sub-chart. All sub-charts of weight 0 are processed first, then sub-charts of weight 1, etc.
-Chart weight shall be specified using the `<chart name>.weight` value.
+Chart weight shall be specified using the `spray.weights.<chart name>` value.
 
 Each sub-chart is deployed under a specific Release named `<chart name or alias>`, enabling a later individual upgrade targeting this sub-chart only. All global or individual upgrade should still be done on the umbrella chart.
 
@@ -67,21 +67,20 @@ dependencies:
   condition: ms3.enabled
 ```
 
-A "values" file shall also be set with the weight it be applied to each individual sub-chart. This weight shall be set in the `<chart name or alias>.weight` element. A good practice is that thei weigths are statically set in the default `values.yaml` file of the umbrella chart (and not in a yaml file provided using the `-f` option), as sub-chart's weight is not likely to change over time.
+A `values.yaml` file shall also set the weight to be applied to each sub-chart. Weights are stored under the `spray.weights` key, using the sub-chart name or alias as the leaf key. A good practice is to define weights statically in the umbrella chart's `values.yaml` (rather than in a file provided via `-f`), as sub-chart weights rarely change between deployments.
+
 As an example corresponding to the above `requirements.yaml` file, the `values.yaml` file of the umbrella chart might be:
 ```
-micro-service-1:
-  weight: 0
-
-micro-service-2:
-  weight: 1
-
-ms3:
-  weight: 2
+spray:
+  weights:
+    micro-service-1: 0
+    micro-service-2: 1
+    ms3: 2
 ```
-Several sub-charts may have the same weight, meaning that they will be upgraded together.
-Upgrade of sub-charts of weight n+1 will only be triggered when upgrade of sub-charts of weight n is completed.
-Note also that while weights should primarilly be set in the `values.yaml` file of the umbrella chart, it is also possible to set them using the `--values/-f` or `--set` flags of the command line, for example to temporarilly overwrite a weight value. If so, take care that weight values provided through the command line are not taken into account for the next calls to Helm Spray, including if the `--reuse-values` flag is used: they would have to be provided again at each call.
+Several sub-charts may share the same weight, meaning they will be upgraded together.
+Sub-charts of weight `n+1` are only processed after all sub-charts of weight `n` have completed successfully.
+
+Weights can also be set or overridden at deploy time via `--set` or `-f`, for example `--set spray.weights.micro-service-1=5`. Note that values provided at the command line are not persisted across subsequent `helm spray` calls, including when `--reuse-values` is used — they must be provided again each time.
 
 
 Helm Spray creates one helm Release per sub-chart. Releases are individually upgraded when running the helm spray process, in particular when using the `--target` option.
@@ -113,16 +112,19 @@ Note also that when Helm is parsing the `values.yaml` file without the included 
 
 Example of `values.yaml`:
 ```
+spray:
+  weights:
+    micro-service-1: 0
+    micro-service-2: 1
+    ms3: 2
+
 micro-service-1:
-  weight: 0
 #! {{ .Files.Get ms1.yaml }}
 
 micro-service-2:
-  weight: 1
 #! {{ pick (.Files.Get ms2.yaml) foo | indent 2 }}
 
 ms3:
-  weight: 2
   bar:
 #! {{ pick (.Files.Get ms3.yaml) bar.baz | indent 4 }}
 # To prevent from having a warning when the file is processed by Helm, a fake content may be set here.
