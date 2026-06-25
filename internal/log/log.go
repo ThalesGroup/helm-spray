@@ -60,8 +60,8 @@ func WithNumberedLines(level int, str string, params ...interface{}) {
 // Log error
 func Error(str string, params ...interface{}) {
 	if len(params) != 0 {
-		os.Stderr.WriteString(fmt.Sprintf(str+"\n", params...))
+		_, _ = fmt.Fprintf(os.Stderr, str+"\n", params...)
 	} else {
-		os.Stderr.WriteString(str + "\n")
+		_, _ = os.Stderr.WriteString(str + "\n")
 	}
 }

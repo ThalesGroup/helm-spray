@@ -408,7 +408,7 @@ func logRelease(releases map[string]helm.Release, deps []dependencies.Dependency
 			targeted = "false (no tag match)"
 		}
 
-		_, _ = fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+		_, _ = fmt.Fprintf(w, "[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t\n", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus)
 	}
 	_ = w.Flush()
 }

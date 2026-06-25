@@ -7,28 +7,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"sigs.k8s.io/yaml"
 )
 
 // ChartInfo represents a chart's metadata
 type ChartInfo struct {
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	AppVersion  string            `json:"appVersion"`
-	Description string            `json:"description"`
-	Dependencies []DependencyInfo `json:"dependencies"`
-	ExecutionOrder []string       `json:"executionOrder"`
-	Path        string            `json:"path"`
+	Name           string           `json:"name"`
+	Version        string           `json:"version"`
+	AppVersion     string           `json:"appVersion"`
+	Description    string           `json:"description"`
+	Dependencies   []DependencyInfo `json:"dependencies"`
+	ExecutionOrder []string         `json:"executionOrder"`
+	Path           string           `json:"path"`
 }
 
 // DependencyInfo represents a chart dependency
 type DependencyInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Alias   string `json:"alias"`
-	Weight  int    `json:"weight"`
+	Name    string   `json:"name"`
+	Version string   `json:"version"`
+	Alias   string   `json:"alias"`
+	Weight  int      `json:"weight"`
 	Tags    []string `json:"tags"`
 }
 
@@ -45,40 +44,40 @@ type ReleaseInfo struct {
 
 // SprayRequest represents a spray execution request
 type SprayRequest struct {
-	ChartName              string   `json:"chartName"`
-	Namespace              string   `json:"namespace"`
-	Targets                []string `json:"targets"`
-	Excludes               []string `json:"excludes"`
-	PrefixReleases         string   `json:"prefixReleases"`
-	CreateNamespace        bool     `json:"createNamespace"`
-	ResetValues            bool     `json:"resetValues"`
-	ReuseValues            bool     `json:"reuseValues"`
-	Force                  bool     `json:"force"`
-	DryRun                 bool     `json:"dryRun"`
-	Verbose                bool     `json:"verbose"`
-	Debug                  bool     `json:"debug"`
-	Timeout                int      `json:"timeout"`
-	ValueFiles             []string `json:"valueFiles"`
-	Values                 []string `json:"values"`
+	ChartName       string   `json:"chartName"`
+	Namespace       string   `json:"namespace"`
+	Targets         []string `json:"targets"`
+	Excludes        []string `json:"excludes"`
+	PrefixReleases  string   `json:"prefixReleases"`
+	CreateNamespace bool     `json:"createNamespace"`
+	ResetValues     bool     `json:"resetValues"`
+	ReuseValues     bool     `json:"reuseValues"`
+	Force           bool     `json:"force"`
+	DryRun          bool     `json:"dryRun"`
+	Verbose         bool     `json:"verbose"`
+	Debug           bool     `json:"debug"`
+	Timeout         int      `json:"timeout"`
+	ValueFiles      []string `json:"valueFiles"`
+	Values          []string `json:"values"`
 }
 
 // ChartMeta is used to parse Chart.yaml
 type ChartMeta struct {
-	APIVersion    string                 `json:"apiVersion" yaml:"apiVersion"`
-	Name          string                 `json:"name" yaml:"name"`
-	Version       string                 `json:"version" yaml:"version"`
-	AppVersion    string                 `json:"appVersion" yaml:"appVersion"`
-	Description   string                 `json:"description" yaml:"description"`
-	Dependencies  []DependencyMeta       `json:"dependencies" yaml:"dependencies"`
+	APIVersion   string           `json:"apiVersion" yaml:"apiVersion"`
+	Name         string           `json:"name" yaml:"name"`
+	Version      string           `json:"version" yaml:"version"`
+	AppVersion   string           `json:"appVersion" yaml:"appVersion"`
+	Description  string           `json:"description" yaml:"description"`
+	Dependencies []DependencyMeta `json:"dependencies" yaml:"dependencies"`
 }
 
 // DependencyMeta is used to parse chart dependencies
 type DependencyMeta struct {
-	Name    string   `json:"name" yaml:"name"`
-	Version string   `json:"version" yaml:"version"`
-	Alias   string   `json:"alias" yaml:"alias"`
-	Tags    []string `json:"tags" yaml:"tags"`
-	Condition string `json:"condition" yaml:"condition"`
+	Name      string   `json:"name" yaml:"name"`
+	Version   string   `json:"version" yaml:"version"`
+	Alias     string   `json:"alias" yaml:"alias"`
+	Tags      []string `json:"tags" yaml:"tags"`
+	Condition string   `json:"condition" yaml:"condition"`
 }
 
 // ScanCharts scans the chart directory for umbrella charts
@@ -279,16 +278,6 @@ func computeExecutionOrder(deps []DependencyInfo) []string {
 	}
 
 	return order
-}
-
-// writeJSON writes a JSON object to the response
-func writeJSON(w http.ResponseWriter, v interface{}) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		fmt.Fprintf(w, `{"error":"%s"}`, strings.Replace(err.Error(), `"`, `\"`, -1))
-		return
-	}
-	w.Write(data)
 }
 
 // readJSON reads a JSON object from the request

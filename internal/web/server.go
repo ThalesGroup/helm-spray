@@ -8,10 +8,10 @@ import (
 
 // Server is the web GUI server
 type Server struct {
-	Addr       string
-	ChartDir   string
-	Namespace  string
-	hub        *Hub
+	Addr      string
+	ChartDir  string
+	Namespace string
+	hub       *Hub
 }
 
 // NewServer creates a new web server
@@ -68,10 +68,9 @@ func (s *Server) handleCharts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"charts":`)
-	data, _ := json.Marshal(charts)
-	w.Write(data)
-	fmt.Fprintf(w, `}`)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"charts": charts}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleChart(w http.ResponseWriter, r *http.Request) {
@@ -93,8 +92,9 @@ func (s *Server) handleChart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.Marshal(info)
-	w.Write(data)
+	if err := json.NewEncoder(w).Encode(info); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleReleases(w http.ResponseWriter, r *http.Request) {
@@ -110,8 +110,9 @@ func (s *Server) handleReleases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	releasesData, _ := json.Marshal(releases)
-	w.Write(releasesData)
+	if err := json.NewEncoder(w).Encode(releases); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleSpray(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +131,9 @@ func (s *Server) handleSpray(w http.ResponseWriter, r *http.Request) {
 	go s.runSpray(req)
 
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status": "started"}`)
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "started"}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) runSpray(req SprayRequest) {
@@ -189,7 +192,7 @@ func (s *Server) runSpray(req SprayRequest) {
 	}
 
 	s.hub.Broadcast([]byte(fmt.Sprintf("[spray] Output:\n%s\n", output)))
-	s.hub.Broadcast([]byte(fmt.Sprintf("[spray] Spray completed successfully\n")))
+	s.hub.Broadcast([]byte("[spray] Spray completed successfully\n"))
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

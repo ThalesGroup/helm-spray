@@ -11,8 +11,6 @@ func Duration(d time.Duration) string {
 	if strings.HasSuffix(s, "m0s") {
 		s = s[:len(s)-2]
 	}
-	if strings.Contains(s, "h0m") {
-		s = strings.Replace(s, "h0m", "h", 1)
-	}
+	s = strings.Replace(s, "h0m", "h", 1)
 	return s
 }

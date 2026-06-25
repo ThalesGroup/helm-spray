@@ -61,15 +61,14 @@ func Merge(chrt chart.Charter, reuseValues bool, valueOpts *values.Options, verb
 // of the corresponding file.
 // Allows:
 //   - Includeing a file:
-//       #! {{ .Files.Get myfile.yaml }}
+//     #! {{ .Files.Get myfile.yaml }}
 //   - Including a sub-part of a file, picking a specific tag. Tags can target a Yaml element (aka table) or a
-//	   leaf value, but tags cannot target a list item.
-//       #! {{ pick (.Files.Get myfile.yaml) tag }}
+//     leaf value, but tags cannot target a list item.
+//     #! {{ pick (.Files.Get myfile.yaml) tag }}
 //   - Indenting the include content:
-//       #! {{ .Files.Get myfile.yaml | indent 2 }}
+//     #! {{ .Files.Get myfile.yaml | indent 2 }}
 //   - All combined...:
-//       #! {{ pick (.Files.Get "myfile.yaml") "tag.subTag" | indent 4 }}
-//
+//     #! {{ pick (.Files.Get "myfile.yaml") "tag.subTag" | indent 4 }}
 func processIncludeInValuesFile(chrt chart.Charter, verbose bool) (string, error) {
 
 	accessor, err := chart.NewAccessor(chrt)
@@ -107,12 +106,13 @@ func processIncludeInValuesFile(chrt chart.Charter, verbose bool) (string, error
 			}
 
 			var fullMatch, includeFileName, subValuePath, indent string
-			if expressionNumber == 0 {
+			switch expressionNumber {
+			case 0:
 				fullMatch = match[0]
 				includeFileName = strings.Trim(match[1], `"`)
 				subValuePath = strings.Trim(match[2], `"`)
 				indent = match[4]
-			} else if expressionNumber == 1 {
+			case 1:
 				fullMatch = match[0]
 				includeFileName = strings.Trim(match[1], `"`)
 				subValuePath = ""
@@ -167,14 +167,14 @@ func processIncludeInValuesFile(chrt chart.Charter, verbose bool) (string, error
 					}
 
 					if indent == "" {
-						chartValues = strings.Replace(chartValues, fullMatch, dataToAdd+"\n", -1)
+						chartValues = strings.ReplaceAll(chartValues, fullMatch, dataToAdd+"\n")
 					} else {
 						nbrOfSpaces, err := strconv.Atoi(indent)
 						if err != nil {
 							return "", fmt.Errorf("computing indentation value in \"#! .Files.Get\" clause: %w", err)
 						}
-						dataToAdd := strings.Replace(dataToAdd, "\n", "\n"+strings.Repeat(" ", nbrOfSpaces), -1)
-						chartValues = strings.Replace(chartValues, fullMatch, strings.Repeat(" ", nbrOfSpaces)+dataToAdd+"\n", -1)
+						dataToAdd := strings.ReplaceAll(dataToAdd, "\n", "\n"+strings.Repeat(" ", nbrOfSpaces))
+						chartValues = strings.ReplaceAll(chartValues, fullMatch, strings.Repeat(" ", nbrOfSpaces)+dataToAdd+"\n")
 					}
 					replaced = true
 				}

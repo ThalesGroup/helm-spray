@@ -97,7 +97,7 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
-		c.conn.Close()
+		_ = c.conn.Close()
 	}()
 
 	for {
@@ -109,7 +109,9 @@ func (c *Client) readPump() {
 }
 
 func (c *Client) writePump() {
-	defer c.conn.Close()
+	defer func() {
+		_ = c.conn.Close()
+	}()
 
 	for message := range c.send {
 		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
