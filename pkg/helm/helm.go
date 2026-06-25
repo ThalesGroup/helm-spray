@@ -158,21 +158,21 @@ func Pull(chart string, version string) (chartPath string, cleanup func(), err e
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return "", nil, err
 	}
 
 	entries, err := os.ReadDir(tempDir)
 	if err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return "", nil, fmt.Errorf("reading chart directory: %w", err)
 	}
 	if len(entries) == 0 {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return "", nil, fmt.Errorf("no chart found after pull")
 	}
 
 	chartPath = filepath.Join(tempDir, entries[0].Name())
-	cleanup = func() { os.RemoveAll(tempDir) }
+	cleanup = func() { _ = os.RemoveAll(tempDir) }
 	return chartPath, cleanup, nil
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/gemalto/helm-spray/v4/pkg/helm"
 	"github.com/gemalto/helm-spray/v4/pkg/kubectl"
 	"github.com/gemalto/helm-spray/v4/pkg/util"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	cliValues "helm.sh/helm/v3/pkg/cli/values"
-	"io/ioutil"
+	"helm.sh/helm/v4/pkg/chart/common"
+	"helm.sh/helm/v4/pkg/chart/loader"
+	cliValues "helm.sh/helm/v4/pkg/cli/values"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -54,24 +54,24 @@ func (s *Spray) Spray() error {
 	startTime := time.Now()
 
 	// Load and validate the umbrella chart...
-	chart, err := loader.Load(s.ChartName)
+	chartCharter, err := loader.Load(s.ChartName)
 	if err != nil {
 		return fmt.Errorf("loading chart \"%s\": %w", s.ChartName, err)
 	}
 
-	mergedValues, updatedChartValuesAsString, err := values.Merge(chart, s.ReuseValues, &s.ValuesOpts, s.Verbose)
+	mergedValues, updatedChartValuesAsString, err := values.Merge(chartCharter, s.ReuseValues, &s.ValuesOpts, s.Verbose)
 	if err != nil {
 		return fmt.Errorf("merging values: %w", err)
 	}
 	if len(updatedChartValuesAsString) > 0 {
 		// Write default values to a temporary file and add it to the list of values files,
 		// for later usage during the calls to helm
-		tempDir, err := ioutil.TempDir("", "spray-")
+		tempDir, err := os.MkdirTemp("", "spray-")
 		if err != nil {
 			return fmt.Errorf("creating temporary directory to write updated default values file for umbrella chart: %w", err)
 		}
 		defer removeTempDir(tempDir)
-		tempFile, err := ioutil.TempFile(tempDir, "updatedDefaultValues-*.yaml")
+		tempFile, err := os.CreateTemp(tempDir, "updatedDefaultValues-*.yaml")
 		if err != nil {
 			return fmt.Errorf("creating temporary file to write updated default values file for umbrella chart: %w", err)
 		}
@@ -93,7 +93,7 @@ func (s *Spray) Spray() error {
 	} else if len(s.PrefixReleases) > 0 {
 		releasePrefix = s.PrefixReleases + "-"
 	}
-	deps, err := dependencies.Get(chart, &mergedValues, s.Targets, s.Excludes, releasePrefix, s.Verbose)
+	deps, err := dependencies.Get(chartCharter, &mergedValues, s.Targets, s.Excludes, releasePrefix, s.Verbose)
 	if err != nil {
 		return fmt.Errorf("analyzing dependencies: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *Spray) Spray() error {
 
 	// Loop on the increasing weight
 	for i := 0; i <= maxWeight(deps); i++ {
-		shouldWait, err := s.upgrade(releases, deps, i)
+		shouldWait, err := s.upgrade(releases, deps, i, &mergedValues)
 		if err != nil {
 			return err
 		}
@@ -139,12 +139,12 @@ func (s *Spray) Spray() error {
 	return nil
 }
 
-func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int) (bool, error) {
+func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.Dependency, currentWeight int, mergedValues *common.Values) (bool, error) {
 	shouldWait := false
 	firstInWeight := true
 	// Upgrade the targeted Deployments corresponding the the current weight
 	for _, dependency := range deps {
-		if dependency.Targeted && dependency.AllowedByTags == true {
+		if dependency.Targeted && dependency.AllowedByTags {
 			if dependency.Weight == currentWeight {
 				if firstInWeight {
 					log.Info(1, "processing sub-charts of weight %d", dependency.Weight)
@@ -164,14 +164,40 @@ func (s *Spray) upgrade(releases map[string]helm.Release, deps []dependencies.De
 
 				shouldWait = true
 
-				// Add the "<dependency>.enabled" flags to ensure that only the current chart is to be executed
+				// Add condition flags to ensure that only the current chart is to be executed
 				depValuesSet := ""
+				skipped := false
 				for _, dep := range deps {
-					if dep.UsedName == dependency.UsedName {
-						depValuesSet = depValuesSet + dep.UsedName + ".enabled=true,"
-					} else {
-						depValuesSet = depValuesSet + dep.UsedName + ".enabled=false,"
+					// Use the condition path from Chart.yaml, falling back to <usedName>.enabled
+					conditionPath := dep.Condition
+					if conditionPath == "" {
+						conditionPath = dep.UsedName + ".enabled"
 					}
+					// Handle comma-delimited condition paths (use first one)
+					if idx := strings.IndexByte(conditionPath, ','); idx >= 0 {
+						conditionPath = conditionPath[:idx]
+					}
+
+					if dep.UsedName == dependency.UsedName {
+						// Check if user has explicitly set this condition to false
+						val, err := mergedValues.PathValue(conditionPath)
+						if err == nil {
+							if boolVal, ok := val.(bool); ok && !boolVal {
+								log.Info(1, "skipping sub-chart \"%s\": condition \"%s\" is set to false",
+									dependency.UsedName, conditionPath)
+								skipped = true
+								break
+							}
+						}
+						depValuesSet = depValuesSet + conditionPath + "=true,"
+					} else {
+						depValuesSet = depValuesSet + conditionPath + "=false,"
+					}
+				}
+
+				if skipped {
+					shouldWait = false
+					continue
 				}
 				var valuesSet []string
 				valuesSet = append(valuesSet, s.ValuesOpts.Values...)
@@ -376,13 +402,13 @@ func logRelease(releases map[string]helm.Release, deps []dependencies.Dependency
 		}
 
 		targeted := fmt.Sprint(dependency.Targeted)
-		if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == true) {
+		if dependency.Targeted && dependency.HasTags && dependency.AllowedByTags {
 			targeted = "true (tag match)"
-		} else if dependency.Targeted && dependency.HasTags && (dependency.AllowedByTags == false) {
+		} else if dependency.Targeted && dependency.HasTags && !dependency.AllowedByTags {
 			targeted = "false (no tag match)"
 		}
 
-		_, _ = fmt.Fprintln(w, fmt.Sprintf("[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus))
+		_, _ = fmt.Fprintf(w, "[spray]  \t %s\t %s\t %s\t %d\t| %s\t %s\t %s\t\n", name, alias, targeted, dependency.Weight, dependency.CorrespondingReleaseName, currentRevision, currentStatus)
 	}
 	_ = w.Flush()
 }

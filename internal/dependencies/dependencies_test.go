@@ -1,0 +1,236 @@
+package dependencies
+
+import (
+	"testing"
+
+	"helm.sh/helm/v4/pkg/chart"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
+)
+
+func createTestChart(name string, deps []*chartv2.Dependency) *chartv2.Chart {
+	c := &chartv2.Chart{
+		Metadata: &chartv2.Metadata{
+			Name:        name,
+			Version:     "1.0.0",
+			APIVersion:  "v2",
+			Dependencies: deps,
+		},
+	}
+	return c
+}
+
+func TestGet(t *testing.T) {
+	tests := []struct {
+		name        string
+		chart       *chartv2.Chart
+		targets     []string
+		excludes    []string
+		expectCount int
+		expectError bool
+	}{
+		{
+			name: "all targeted",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0"},
+				{Name: "sub2", Version: "0.2.0"},
+			}),
+			targets:     []string{},
+			excludes:    []string{},
+			expectCount: 2,
+			expectError: false,
+		},
+		{
+			name: "with targets",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0"},
+				{Name: "sub2", Version: "0.2.0"},
+			}),
+			targets:     []string{"sub1"},
+			excludes:    []string{},
+			expectCount: 2, // Both returned, but only sub1 is targeted
+			expectError: false,
+		},
+		{
+			name: "with excludes",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0"},
+				{Name: "sub2", Version: "0.2.0"},
+			}),
+			targets:     []string{},
+			excludes:    []string{"sub2"},
+			expectCount: 2,
+			expectError: false,
+		},
+		{
+			name: "with alias",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Alias: "ms1"},
+			}),
+			targets:     []string{},
+			excludes:    []string{},
+			expectCount: 1,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chrt := chart.Charter(tt.chart)
+			vals, err := common.ReadValues([]byte("spray:\n  weights:\n    sub1: 0\n    sub2: 0\n    ms1: 0"))
+			if err != nil {
+				t.Fatalf("ReadValues error = %v", err)
+			}
+
+			result, err := Get(chrt, &vals, tt.targets, tt.excludes, "", false)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Get() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Get() error = %v", err)
+			}
+
+			if len(result) != tt.expectCount {
+				t.Errorf("Get() returned %d dependencies, want %d", len(result), tt.expectCount)
+			}
+		})
+	}
+}
+
+func TestTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		values   common.Values
+		expected map[string]interface{}
+	}{
+		{
+			name: "with tags",
+			values: map[string]interface{}{
+				"tags": map[string]interface{}{
+					"tag1": true,
+					"tag2": false,
+				},
+			},
+			expected: map[string]interface{}{
+				"tag1": true,
+				"tag2": false,
+			},
+		},
+		{
+			name:     "no tags",
+			values:   map[string]interface{}{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vals := &tt.values
+			result := tags(vals, false)
+
+			if tt.expected == nil {
+				if result != nil {
+					t.Errorf("tags() = %v, want nil", result)
+				}
+				return
+			}
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("tags() returned %d entries, want %d", len(result), len(tt.expected))
+				return
+			}
+
+			for k, v := range tt.expected {
+				if result[k] != v {
+					t.Errorf("tags()[%q] = %v, want %v", k, result[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestCondition(t *testing.T) {
+	tests := []struct {
+		name            string
+		chart           *chartv2.Chart
+		expectedPaths   map[string]string // UsedName -> expected Condition path
+	}{
+		{
+			name: "standard condition path",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Condition: "sub1.enabled"},
+				{Name: "sub2", Version: "0.2.0", Condition: "sub2.enabled"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "sub1.enabled",
+				"sub2": "sub2.enabled",
+			},
+		},
+		{
+			name: "non-standard condition path",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Condition: "sub1.features.logging"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "sub1.features.logging",
+			},
+		},
+		{
+			name: "empty condition falls back to UsedName.enabled",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "", // Empty, will fall back to UsedName.enabled in upgrade()
+			},
+		},
+		{
+			name: "alias with condition",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "micro-service-1", Version: "0.1.0", Alias: "ms1", Condition: "ms1.enabled"},
+			}),
+			expectedPaths: map[string]string{
+				"ms1": "ms1.enabled",
+			},
+		},
+		{
+			name: "comma-delimited condition uses first path",
+			chart: createTestChart("test", []*chartv2.Dependency{
+				{Name: "sub1", Version: "0.1.0", Condition: "sub1.enabled,global.sub1.enabled"},
+			}),
+			expectedPaths: map[string]string{
+				"sub1": "sub1.enabled,global.sub1.enabled",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chrt := chart.Charter(tt.chart)
+			vals, err := common.ReadValues([]byte("spray:\n  weights:\n    sub1: 0\n    sub2: 0\n    ms1: 0"))
+			if err != nil {
+				t.Fatalf("ReadValues error = %v", err)
+			}
+
+			result, err := Get(chrt, &vals, []string{}, []string{}, "", false)
+			if err != nil {
+				t.Fatalf("Get() error = %v", err)
+			}
+
+			for _, dep := range result {
+				expectedPath, ok := tt.expectedPaths[dep.UsedName]
+				if !ok {
+					t.Errorf("unexpected dependency %q", dep.UsedName)
+					continue
+				}
+				if dep.Condition != expectedPath {
+					t.Errorf("dependency %q Condition = %q, want %q", dep.UsedName, dep.Condition, expectedPath)
+				}
+			}
+		})
+	}
+}
