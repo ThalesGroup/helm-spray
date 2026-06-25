@@ -79,7 +79,7 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 
 		// Get weight of the dependency. If no weight is specified, setting it to 0
 		dependencies[i].Weight = 0
-		weightJson, err := values.PathValue(dependencies[i].UsedName + ".weight")
+		weightJson, err := values.PathValue("spray.weights." + dependencies[i].UsedName)
 		if err != nil {
 			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
 		}

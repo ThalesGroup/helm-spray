@@ -16,13 +16,12 @@ package helm
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/gemalto/helm-spray/v4/internal/log"
-	"io/ioutil"
 	"os"
 	"os/exec"
-	"runtime"
+	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 type Status struct {
@@ -143,53 +142,37 @@ func UpgradeWithValues(level int, namespace string, createNamespace bool, releas
 	return upgradedRelease, nil
 }
 
-// Fetch ...
-func Fetch(chart string, version string) (string, error) {
-	tempDir, err := ioutil.TempDir("", "spray-")
+// Pull downloads a chart using `helm pull --untar` and returns the path
+// to the extracted chart directory plus a cleanup function.
+func Pull(chart string, version string) (chartPath string, cleanup func(), err error) {
+	tempDir, err := os.MkdirTemp("", "spray-")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	defer removeTempDir(tempDir)
 
-	var cmd *exec.Cmd
-
-	var args = []string{"fetch", chart, "--destination", tempDir}
+	args := []string{"pull", chart, "--destination", tempDir, "--untar"}
 	if version != "" {
 		args = append(args, "--version", version)
 	}
-	cmd = exec.Command("helm", args...)
+	cmd := exec.Command("helm", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return "", err
+		os.RemoveAll(tempDir)
+		return "", nil, err
 	}
 
-	var command string
-	var endOfLine string
-	if runtime.GOOS == "windows" {
-		command = "dir /b " + tempDir + " && copy " + tempDir + "\\* ."
-		cmd = exec.Command("cmd", "/C", command)
-		endOfLine = "\r\n"
-	} else {
-		command = "ls " + tempDir + " && cp " + tempDir + "/* ."
-		cmd = exec.Command("sh", "-c", command)
-		endOfLine = "\n"
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		os.RemoveAll(tempDir)
+		return "", nil, fmt.Errorf("reading chart directory: %w", err)
 	}
-	cmdOutput := &bytes.Buffer{}
-	cmd.Stdout = cmdOutput
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", err
+	if len(entries) == 0 {
+		os.RemoveAll(tempDir)
+		return "", nil, fmt.Errorf("no chart found after pull")
 	}
 
-	output := cmdOutput.Bytes()
-	var outputStr = string(output)
-	var result = strings.Split(outputStr, endOfLine)
-	return result[0], nil
-}
-
-func removeTempDir(tempDir string) {
-	if err := os.RemoveAll(tempDir); err != nil {
-		log.Error("Unable to remove temporary directory: %s", err)
-	}
+	chartPath = filepath.Join(tempDir, entries[0].Name())
+	cleanup = func() { os.RemoveAll(tempDir) }
+	return chartPath, cleanup, nil
 }
