@@ -9,11 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24.1'
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           path: ${{ github.workspace }}/src/github.com/gemalto/helm-spray
@@ -22,7 +22,7 @@ jobs:
           cd ${{ github.workspace }}/src/github.com/gemalto/helm-spray
           make dist
       - name: Publish release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           prerelease: false
           files: ${{ github.workspace }}/src/github.com/gemalto/helm-spray/_dist/helm-spray*
