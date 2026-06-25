@@ -3,10 +3,19 @@ set -eu
 
 CLUSTER_NAME="${CLUSTER_NAME:-spray-test}"
 NAMESPACE="${NAMESPACE:-spray-itest-$$}"
+USE_EXISTING_CLUSTER="${USE_EXISTING_CLUSTER:-0}"
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/helm-spray-itest.XXXXXX")"
 HELM_PLUGINS_DIR="${WORK_DIR}/helm-plugins"
 CREATED_NAMESPACE=0
+
+# Usage:
+#   scripts/helm4_integration_tests.sh
+#   USE_EXISTING_CLUSTER=1 NAMESPACE=spray-itest scripts/helm4_integration_tests.sh
+#
+# By default the script creates or reuses a local kind cluster named by
+# CLUSTER_NAME. Set USE_EXISTING_CLUSTER=1 to run against the current kubectl
+# context, such as an AKS test cluster.
 
 cleanup() {
     if [ "${KEEP_NAMESPACE:-0}" != "1" ] && [ "${CREATED_NAMESPACE}" = "1" ]; then
@@ -142,8 +151,10 @@ EOF
 
 require go
 require helm
-require kind
 require kubectl
+if [ "${USE_EXISTING_CLUSTER}" != "1" ]; then
+    require kind
+fi
 
 mkdir -p "${HELM_PLUGINS_DIR}/spray/bin"
 cd "${ROOT_DIR}"
@@ -151,11 +162,17 @@ go build -o "${HELM_PLUGINS_DIR}/spray/bin/helm-spray" main.go
 cp plugin.yaml README.md LICENSE "${HELM_PLUGINS_DIR}/spray/"
 export HELM_PLUGINS="${HELM_PLUGINS_DIR}"
 
-if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
-    kind create cluster --name "${CLUSTER_NAME}"
+if [ "${USE_EXISTING_CLUSTER}" = "1" ]; then
+    log "Using current kubectl context"
+    kubectl cluster-info >/dev/null
+else
+    if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
+        kind create cluster --name "${CLUSTER_NAME}"
+    fi
+
+    kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null
 fi
 
-kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null
 if ! kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1; then
     kubectl create namespace "${NAMESPACE}" >/dev/null
     CREATED_NAMESPACE=1

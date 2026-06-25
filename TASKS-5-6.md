@@ -98,6 +98,12 @@ The integration script uses a fresh namespace by default and adds assertions for
 - invalid target failure.
 - conflicting `--target` and `--exclude` failure.
 
+To run against an existing Kubernetes context, such as AKS, skip kind setup:
+
+```sh
+USE_EXISTING_CLUSTER=1 NAMESPACE=spray-itest scripts/helm4_integration_tests.sh
+```
+
 ### Cleanup
 
 ```sh
