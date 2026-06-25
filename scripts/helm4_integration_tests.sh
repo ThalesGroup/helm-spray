@@ -2,6 +2,7 @@
 set -eu
 
 CLUSTER_NAME="${CLUSTER_NAME:-spray-test}"
+NAMESPACE_PROVIDED="${NAMESPACE+x}"
 NAMESPACE="${NAMESPACE:-spray-itest-$$}"
 USE_EXISTING_CLUSTER="${USE_EXISTING_CLUSTER:-1}"
 CREATE_NAMESPACE="${CREATE_NAMESPACE:-}"
@@ -149,17 +150,19 @@ EOF
 tags:
   core: true
   optional: true
+spray:
+  weights:
+    app-a: 0
+    app-b: 1
+    app-c: 2
 app-a:
   enabled: true
-  weight: 0
   marker: default-a
 app-b:
   enabled: true
-  weight: 1
   marker: default-b
 app-c:
   enabled: true
-  weight: 2
   marker: default-c
 EOF
 
@@ -173,7 +176,6 @@ EOF
 
         cat > "${chart_dir}/charts/${app}/values.yaml" <<'EOF'
 enabled: true
-weight: 0
 marker: subchart-default
 EOF
 
@@ -217,7 +219,7 @@ else
 fi
 
 if [ -z "${CREATE_NAMESPACE}" ]; then
-    if [ "${USE_EXISTING_CLUSTER}" = "0" ]; then
+    if [ "${USE_EXISTING_CLUSTER}" = "0" ] || [ -z "${NAMESPACE_PROVIDED}" ]; then
         CREATE_NAMESPACE=1
     else
         CREATE_NAMESPACE=0

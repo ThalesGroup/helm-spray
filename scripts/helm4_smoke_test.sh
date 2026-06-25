@@ -56,12 +56,14 @@ dependencies:
 EOF
 
 cat > "${WORK_DIR}/chart/values.yaml" <<'EOF'
+spray:
+  weights:
+    app-a: 0
+    app-b: 1
 app-a:
   enabled: true
-  weight: 0
 app-b:
   enabled: true
-  weight: 1
 EOF
 
 cat > "${WORK_DIR}/chart/charts/app-a/Chart.yaml" <<'EOF'
@@ -73,7 +75,6 @@ EOF
 
 cat > "${WORK_DIR}/chart/charts/app-a/values.yaml" <<'EOF'
 enabled: true
-weight: 0
 EOF
 
 cat > "${WORK_DIR}/chart/charts/app-a/templates/configmap.yaml" <<'EOF'
@@ -94,7 +95,6 @@ EOF
 
 cat > "${WORK_DIR}/chart/charts/app-b/values.yaml" <<'EOF'
 enabled: true
-weight: 1
 EOF
 
 cat > "${WORK_DIR}/chart/charts/app-b/templates/configmap.yaml" <<'EOF'
@@ -114,4 +114,3 @@ helm --namespace "${NAMESPACE}" spray "${WORK_DIR}/chart" --dry-run --debug --ti
 
 helm --namespace "${NAMESPACE}" list
 kubectl --namespace "${NAMESPACE}" get configmap app-a-smoke app-b-smoke
-
