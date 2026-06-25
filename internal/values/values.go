@@ -3,10 +3,11 @@ package values
 import (
 	"fmt"
 	"github.com/gemalto/helm-spray/v4/internal/log"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/cli/values"
-	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v4/pkg/chart"
+	"helm.sh/helm/v4/pkg/chart/common"
+	"helm.sh/helm/v4/pkg/chart/common/util"
+	"helm.sh/helm/v4/pkg/cli/values"
+	"helm.sh/helm/v4/pkg/getter"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,24 +18,24 @@ var httpProvider = getter.Provider{
 	New:     getter.NewHTTPGetter,
 }
 
-func Merge(chart *chart.Chart, reuseValues bool, valueOpts *values.Options, verbose bool) (chartutil.Values, string, error) {
-	var chartValues chartutil.Values
+func Merge(chrt chart.Charter, reuseValues bool, valueOpts *values.Options, verbose bool) (common.Values, string, error) {
+	var chartValues common.Values
 	var updatedChartValuesAsString string
 	var err error
 
 	// Get the default values file of the umbrella chart and process the '#! .Files.Get' directives that might be specified in it
 	// Only in case '--reuseValues' has not been set
-	if reuseValues == false {
-		updatedChartValuesAsString, err = processIncludeInValuesFile(chart, verbose)
+	if !reuseValues {
+		updatedChartValuesAsString, err = processIncludeInValuesFile(chrt, verbose)
 		if err != nil {
 			return nil, "", fmt.Errorf("processing includes: %w", err)
 		}
-		updatedChartValues, err := chartutil.ReadValues([]byte(updatedChartValuesAsString))
+		updatedChartValues, err := common.ReadValues([]byte(updatedChartValuesAsString))
 		if err != nil {
 			return nil, "", fmt.Errorf("generating updated values after processing of include(s): %w", err)
 		}
 		// Merge the new values (including the ones coming from chart dependencies)
-		chartValues, err = chartutil.CoalesceValues(chart, updatedChartValues)
+		chartValues, err = util.CoalesceValues(chrt, updatedChartValues)
 		if err != nil {
 			if verbose {
 				log.WithNumberedLines(1, updatedChartValuesAsString)
@@ -42,7 +43,7 @@ func Merge(chart *chart.Chart, reuseValues bool, valueOpts *values.Options, verb
 			return nil, "", fmt.Errorf("merging updated values with umbrella chart: %w", err)
 		}
 	} else {
-		chartValues, err = chartutil.CoalesceValues(chart, chart.Values)
+		chartValues, err = util.CoalesceValues(chrt, map[string]any{})
 		if err != nil {
 			return nil, "", fmt.Errorf("merging values with umbrella chart: %w", err)
 		}
@@ -60,16 +61,20 @@ func Merge(chart *chart.Chart, reuseValues bool, valueOpts *values.Options, verb
 // of the corresponding file.
 // Allows:
 //   - Includeing a file:
-//       #! {{ .Files.Get myfile.yaml }}
+//     #! {{ .Files.Get myfile.yaml }}
 //   - Including a sub-part of a file, picking a specific tag. Tags can target a Yaml element (aka table) or a
-//	   leaf value, but tags cannot target a list item.
-//       #! {{ pick (.Files.Get myfile.yaml) tag }}
+//     leaf value, but tags cannot target a list item.
+//     #! {{ pick (.Files.Get myfile.yaml) tag }}
 //   - Indenting the include content:
-//       #! {{ .Files.Get myfile.yaml | indent 2 }}
+//     #! {{ .Files.Get myfile.yaml | indent 2 }}
 //   - All combined...:
-//       #! {{ pick (.Files.Get "myfile.yaml") "tag.subTag" | indent 4 }}
-//
-func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error) {
+//     #! {{ pick (.Files.Get "myfile.yaml") "tag.subTag" | indent 4 }}
+func processIncludeInValuesFile(chrt chart.Charter, verbose bool) (string, error) {
+
+	accessor, err := chart.NewAccessor(chrt)
+	if err != nil {
+		return "", fmt.Errorf("creating chart accessor: %w", err)
+	}
 
 	regularExpressions := []string{
 		// Expression #0: Process file inclusion ".Files.Get" with optional "| indent"
@@ -79,8 +84,8 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 		`#!\s*\{\{\s*\.Files?\.Get\s+([a-zA-Z0-9_"\\\/\.\-\(\):]+)\s*(\|\s*indent\s*(\d+))?\s*\}\}\s*(\n|\z)`}
 
 	var chartValues string
-	for _, f := range chart.Raw {
-		if f.Name == chartutil.ValuesfileName {
+	for _, f := range accessor.Files() {
+		if f.Name == "values.yaml" {
 			chartValues = string(f.Data)
 		}
 	}
@@ -101,12 +106,13 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 			}
 
 			var fullMatch, includeFileName, subValuePath, indent string
-			if expressionNumber == 0 {
+			switch expressionNumber {
+			case 0:
 				fullMatch = match[0]
 				includeFileName = strings.Trim(match[1], `"`)
 				subValuePath = strings.Trim(match[2], `"`)
 				indent = match[4]
-			} else if expressionNumber == 1 {
+			case 1:
 				fullMatch = match[0]
 				includeFileName = strings.Trim(match[1], `"`)
 				subValuePath = ""
@@ -116,7 +122,7 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 			replaced := false
 
 			// Looking at all the file in the chart
-			for _, f := range chart.Files {
+			for _, f := range accessor.Files() {
 				// When filename on regex and file name in chart match
 				if f.Name == strings.Trim(strings.TrimSpace(includeFileName), "\"") {
 					if verbose {
@@ -137,7 +143,7 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 
 					dataToAdd := string(f.Data)
 					if subValuePath != "" {
-						data, err := chartutil.ReadValues(f.Data)
+						data, err := common.ReadValues(f.Data)
 						if err != nil {
 							return "", fmt.Errorf("reading values from file \"%s\": %w", includeFileName, err)
 						}
@@ -151,7 +157,7 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 							// If it is not an element, then maybe it is directly a value
 							if val, err2 := data.PathValue(subValuePath); err2 == nil {
 								var ok bool
-								if dataToAdd, ok = val.(string); ok == false {
+								if dataToAdd, ok = val.(string); !ok {
 									return "", fmt.Errorf("finding values matching path \"%s\" in values file \"%s\": %w", subValuePath, includeFileName, err)
 								}
 							} else {
@@ -161,14 +167,14 @@ func processIncludeInValuesFile(chart *chart.Chart, verbose bool) (string, error
 					}
 
 					if indent == "" {
-						chartValues = strings.Replace(chartValues, fullMatch, dataToAdd+"\n", -1)
+						chartValues = strings.ReplaceAll(chartValues, fullMatch, dataToAdd+"\n")
 					} else {
 						nbrOfSpaces, err := strconv.Atoi(indent)
 						if err != nil {
 							return "", fmt.Errorf("computing indentation value in \"#! .Files.Get\" clause: %w", err)
 						}
-						dataToAdd := strings.Replace(dataToAdd, "\n", "\n"+strings.Repeat(" ", nbrOfSpaces), -1)
-						chartValues = strings.Replace(chartValues, fullMatch, strings.Repeat(" ", nbrOfSpaces)+dataToAdd+"\n", -1)
+						dataToAdd := strings.ReplaceAll(dataToAdd, "\n", "\n"+strings.Repeat(" ", nbrOfSpaces))
+						chartValues = strings.ReplaceAll(chartValues, fullMatch, strings.Repeat(" ", nbrOfSpaces)+dataToAdd+"\n")
 					}
 					replaced = true
 				}
@@ -191,7 +197,7 @@ func mergeMaps(a, b map[string]interface{}) map[string]interface{} {
 	for k, v := range b {
 		if v, ok := v.(map[string]interface{}); ok {
 			if bv, ok := out[k]; ok {
-				if bv, ok := bv.(map[string]interface{}); ok {
+				if bv, ok := bv.(map[string]interface{}); ok { //nolint:govet
 					out[k] = mergeMaps(bv, v)
 					continue
 				}

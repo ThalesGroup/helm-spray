@@ -9,13 +9,14 @@
 This is a Helm plugin to install or upgrade sub-charts one by one from an umbrella chart.
 
 It works like `helm upgrade --install`, except that it upgrades or installs each sub-charts according to a weight (>=0) set on each sub-chart. All sub-charts of weight 0 are processed first, then sub-charts of weight 1, etc.
-Chart weight shall be specified using the `<chart name>.weight` value.
+Chart weight shall be specified using the `spray.weights.<chart name>` value.
 
 Each sub-chart is deployed under a specific Release named `<chart name or alias>`, enabling a later individual upgrade targeting this sub-chart only. All global or individual upgrade should still be done on the umbrella chart.
 
 ## Compatibility with helm
 - helm-spray v3.x releases are only compatible with helm v2.x
 - helm-spray v4.x releases are only compatible with helm v3.x
+- helm-spray v5.x releases are compatible with helm v4.x through the legacy CLI plugin path
 
 ## Continuous Integration & Delivery
 
@@ -48,7 +49,7 @@ Please follow this [page](https://kubernetes.io/docs/tasks/tools/install-kubectl
 ```
 
 Helm Spray shall always be called on the umbrella chart, whatever it is for upgrading the full set of charts, or for upgrading individual sub-charts (using the `--target` option).
-For a proper usage of helm spray, the umbrella chart shall have a `requirements.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled`.
+For a proper usage of helm spray, the umbrella chart shall have a `requirements.yaml` file listing all the sub-charts to be deployed (under the `dependencies` element). Sub-charts may have an `alias` element and the `condition` element shall be set to the value `<chart name or alias>.enabled` (recommended convention). Helm Spray now supports Helm Conditions — if a dependency has a condition path set, Helm Spray will use that path to control whether the sub-chart is enabled. If the condition resolves to `false` in the values, the sub-chart will be skipped with a warning.
 Here is an example of `requirements.yaml` file for an umbrella chart having three sub-charts, one of them having an alias:
 ```
 dependencies:
@@ -67,21 +68,19 @@ dependencies:
   condition: ms3.enabled
 ```
 
-A "values" file shall also be set with the weight it be applied to each individual sub-chart. This weight shall be set in the `<chart name or alias>.weight` element. A good practice is that thei weigths are statically set in the default `values.yaml` file of the umbrella chart (and not in a yaml file provided using the `-f` option), as sub-chart's weight is not likely to change over time.
+A `values.yaml` file shall also set the weight to be applied to each sub-chart. Weights are stored under the `spray.weights` key, using the sub-chart name or alias as the leaf key. A good practice is to define weights statically in the umbrella chart's `values.yaml` (rather than in a file provided via `-f`), as sub-chart weights rarely change between deployments.
 As an example corresponding to the above `requirements.yaml` file, the `values.yaml` file of the umbrella chart might be:
 ```
-micro-service-1:
-  weight: 0
-
-micro-service-2:
-  weight: 1
-
-ms3:
-  weight: 2
+spray:
+  weights:
+    micro-service-1: 0
+    micro-service-2: 1
+    ms3: 2
 ```
-Several sub-charts may have the same weight, meaning that they will be upgraded together.
-Upgrade of sub-charts of weight n+1 will only be triggered when upgrade of sub-charts of weight n is completed.
-Note also that while weights should primarilly be set in the `values.yaml` file of the umbrella chart, it is also possible to set them using the `--values/-f` or `--set` flags of the command line, for example to temporarilly overwrite a weight value. If so, take care that weight values provided through the command line are not taken into account for the next calls to Helm Spray, including if the `--reuse-values` flag is used: they would have to be provided again at each call.
+Several sub-charts may share the same weight, meaning they will be upgraded together.
+Sub-charts of weight `n+1` are only processed after all sub-charts of weight `n` have completed successfully.
+
+Weights can also be set or overridden at deploy time via `--set` or `-f`, for example `--set spray.weights.micro-service-1=5`. Note that values provided at the command line are not persisted across subsequent `helm spray` calls, including when `--reuse-values` is used — they must be provided again each time.
 
 
 Helm Spray creates one helm Release per sub-chart. Releases are individually upgraded when running the helm spray process, in particular when using the `--target` option.
@@ -99,10 +98,10 @@ Note: if an alias is set for a sub-chart, then this is this alias that should be
 
 The umbrella chart gathers several components or micro-services into a single solution. Values can then be set at many different places:
 - At micro-service level, inside the `values.yaml` file of each micro-service chart: these are common defaults values set by the micro-service developer, independently from the deployment context and location of the micro-service
-- At the solution level, inside the `values.yaml` file of the umbrella chart: these are values complementing or overwriting default values of the micro-services sub-charts, usually formalizing the deployment topology of the solution and giving the standard configuration of the underlying micro-services for any deployments of cwthis specific solution
+- At the solution level, inside the `values.yaml` file of the umbrella chart: these are values complementing or overwriting default values of the micro-services sub-charts, usually formalizing the deployment topology of the solution and giving the standard configuration of the underlying micro-services for any deployments of this specific solution
 - At deployment time, using the `--values/-f`, `--set`, `--set-string`, or `--set-file` flags: this is the placeholder for giving the deployment-dependent values, specifying for example the exact database url for this deployment, the exact password value for this deployment, the targeted remote server url for this deployment, etc. These values usually change from one deployment of the solution to another.
 
-Within the micro-services paradigm, decoupling between micro-services is one of the most important criteria to respect. While values con be provided in a per-micro-service basis for the first and last places mentioned above, Helm only allows one single `values.yaml` file in the umbrella chart. All solution-level values should then be gathered into a single file, while it would have been better to provide values in several files, on a one-file-per-micro-service basis (to ensure decoupling of the micro-services configuration, even at solution level).
+Within the micro-services paradigm, decoupling between micro-services is one of the most important criteria to respect. While values can be provided in a per-micro-service basis for the first and last places mentioned above, Helm only allows one single `values.yaml` file in the umbrella chart. All solution-level values should then be gathered into a single file, while it would have been better to provide values in several files, on a one-file-per-micro-service basis (to ensure decoupling of the micro-services configuration, even at solution level).
 Helm Spray is consequently adding this capability to have several values file in the umbrella chart and to include them into the single `values.yaml` file using the `#! {{ .Files.Get <file name> }}` directive.
 - The file to be included shall be a valid yaml file.
 - It is possible to only include a sub-part of the yaml content by picking an element of the `Files.Get`, specifying the path to be extracted and included: `#! {{ pick (.Files.Get <file name>) for.bar }}`. Only paths targeting a Yaml element or a leaf value can be provided. Paths targeted lists are not supported.
@@ -113,16 +112,19 @@ Note also that when Helm is parsing the `values.yaml` file without the included 
 
 Example of `values.yaml`:
 ```
+spray:
+  weights:
+    micro-service-1: 0
+    micro-service-2: 1
+    ms3: 2
+
 micro-service-1:
-  weight: 0
 #! {{ .Files.Get ms1.yaml }}
 
 micro-service-2:
-  weight: 1
 #! {{ pick (.Files.Get ms2.yaml) foo | indent 2 }}
 
 ms3:
-  weight: 2
   bar:
 #! {{ pick (.Files.Get ms3.yaml) bar.baz | indent 4 }}
 # To prevent from having a warning when the file is processed by Helm, a fake content may be set here.

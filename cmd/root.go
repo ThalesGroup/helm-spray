@@ -45,7 +45,7 @@ nor '--set', use '--set-file' to read the single large value from file.
 
 You can specify the '--values'/'-f' flag several times or provide a single comma separated value.
 You can specify the '--set' flag several times or provide a single comma separated value.
-Helm Spray does not support Helm Conditions, but supports Helm Tags, with some restrictions.
+ Helm Spray now supports Helm Conditions, in addition to Helm Tags, with some restrictions.
 
 To check the generated manifests of a release without installing the chart,
 the '--debug' and '--dry-run' flags can be combined. This will still require a
@@ -103,7 +103,7 @@ func NewRootCmd() *cobra.Command {
 				}
 			}
 
-			if s.PrefixReleasesWithNamespace == true && s.PrefixReleases != "" {
+			if s.PrefixReleasesWithNamespace && s.PrefixReleases != "" {
 				return errors.New("cannot use both --prefix-releases and --prefix-releases-with-namespace together")
 			}
 
@@ -111,31 +111,31 @@ func NewRootCmd() *cobra.Command {
 				return errors.New("cannot use both --target and --exclude together")
 			}
 
-			// If chart is specified through an URL, then fetch it from the URL.
+			// If chart is specified through an URL, then pull it from the URL.
 			if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
 				if s.ChartVersion != "" {
-					log.Info(1, "fetching chart from URL \"%s\" with version \"%s\"...", s.ChartName, s.ChartVersion)
+					log.Info(1, "pulling chart from URL \"%s\" with version \"%s\"...", s.ChartName, s.ChartVersion)
 				} else {
-					log.Info(1, "fetching chart from URL \"%s\"...", s.ChartName)
+					log.Info(1, "pulling chart from URL \"%s\"...", s.ChartName)
 				}
-				var err error
-				fetchedChartName, err := helm.Fetch(s.ChartName, s.ChartVersion)
+				fetchedChartName, cleanup, err := helm.Pull(s.ChartName, s.ChartVersion)
 				if err != nil {
-					return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
+					return fmt.Errorf("pulling chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
 				}
+				defer cleanup()
 				s.ChartName = fetchedChartName
 			} else if _, err := os.Stat(s.ChartName); err != nil {
-				// If local file (or directory) does not exist, then fetch it from a repo.
+				// If local file (or directory) does not exist, then pull it from a repo.
 				if s.ChartVersion != "" {
-					log.Info(1, "fetching chart \"%s\" from repos with version \"%s\"...", s.ChartName, s.ChartVersion)
+					log.Info(1, "pulling chart \"%s\" from repos with version \"%s\"...", s.ChartName, s.ChartVersion)
 				} else {
-					log.Info(1, "fetching chart \"%s\" from repos...", s.ChartName)
+					log.Info(1, "pulling chart \"%s\" from repos...", s.ChartName)
 				}
-				var err error
-				fetchedChartName, err := helm.Fetch(s.ChartName, s.ChartVersion)
+				fetchedChartName, cleanup, err := helm.Pull(s.ChartName, s.ChartVersion)
 				if err != nil {
-					return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
+					return fmt.Errorf("pulling chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
 				}
+				defer cleanup()
 				s.ChartName = fetchedChartName
 			} else {
 				log.Info(1, "processing chart from local file or directory \"%s\"...", s.ChartName)
@@ -180,6 +180,8 @@ func NewRootCmd() *cobra.Command {
 	} else {
 		s.Namespace = "default"
 	}
+
+	AddWebCommand(cmd)
 
 	return cmd
 }

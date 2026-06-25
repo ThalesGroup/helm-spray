@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gemalto/helm-spray/v4/internal/log"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"reflect"
+	"helm.sh/helm/v4/pkg/chart"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // Dependency ...
@@ -14,6 +14,7 @@ type Dependency struct {
 	Name                     string
 	Alias                    string
 	UsedName                 string
+	Condition                string
 	AppVersion               string
 	Targeted                 bool
 	Weight                   int
@@ -22,13 +23,19 @@ type Dependency struct {
 	AllowedByTags            bool
 }
 
-func Get(chart *chart.Chart, values *chartutil.Values, targets []string, excludes []string, releasePrefix string, verbose bool) ([]Dependency, error) {
+func Get(chrt chart.Charter, values *common.Values, targets []string, excludes []string, releasePrefix string, verbose bool) ([]Dependency, error) {
+	// Type-assert to *chartv2.Chart for access to Metadata and Dependencies
+	c, ok := chrt.(*chartv2.Chart)
+	if !ok {
+		return nil, fmt.Errorf("chart is not a v2 chart")
+	}
+
 	// Compute tags
 	providedTags := tags(values, verbose)
 
 	// Build the list of all dependencies, and their key attributes
-	dependencies := make([]Dependency, len(chart.Metadata.Dependencies))
-	for i, req := range chart.Metadata.Dependencies {
+	dependencies := make([]Dependency, len(c.Metadata.Dependencies))
+	for i, req := range c.Metadata.Dependencies {
 		// Dependency name and alias
 		dependencies[i].Name = req.Name
 		dependencies[i].Alias = req.Alias
@@ -36,6 +43,16 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 			dependencies[i].UsedName = dependencies[i].Name
 		} else {
 			dependencies[i].UsedName = dependencies[i].Alias
+		}
+
+		// Store the condition path from Chart.yaml
+		dependencies[i].Condition = req.Condition
+		if req.Condition != "" {
+			expectedPath := dependencies[i].UsedName + ".enabled"
+			if req.Condition != expectedPath {
+				log.Info(2, "dependency \"%s\" has non-standard condition path \"%s\" (expected \"%s\")",
+					dependencies[i].UsedName, req.Condition, expectedPath)
+			}
 		}
 
 		// Is dependency targeted?
@@ -79,24 +96,23 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 
 		// Get weight of the dependency. If no weight is specified, setting it to 0
 		dependencies[i].Weight = 0
-		weightJson, err := values.PathValue(dependencies[i].UsedName + ".weight")
+		weightJson, err := values.PathValue("spray.weights." + dependencies[i].UsedName)
 		if err != nil {
 			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
 		}
 
 		weightInteger := 0
 		// Depending on the configuration of the json parser, integer can be returned either as Float64 or json.Number
-		if reflect.TypeOf(weightJson).String() == "json.Number" {
-			w, err := weightJson.(json.Number).Int64()
+		switch w := weightJson.(type) {
+		case json.Number:
+			intVal, err := w.Int64()
 			if err != nil {
 				return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
 			}
+			weightInteger = int(intVal)
+		case float64:
 			weightInteger = int(w)
-
-		} else if reflect.TypeOf(weightJson).String() == "float64" {
-			weightInteger = int(weightJson.(float64))
-
-		} else {
+		default:
 			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be an integer", dependencies[i].UsedName)
 		}
 
@@ -107,9 +123,16 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 		dependencies[i].CorrespondingReleaseName = releasePrefix + dependencies[i].UsedName
 
 		// Get the AppVersion that is contained in the Chart.yaml file of the dependency sub-chart
-		for _, subChart := range chart.Dependencies() {
-			if subChart.Metadata.Name == dependencies[i].Name {
-				dependencies[i].AppVersion = subChart.Metadata.AppVersion
+		for _, subChart := range c.Dependencies() {
+			subChartAccessor, err := chart.NewAccessor(subChart)
+			if err != nil {
+				continue
+			}
+			if subChartAccessor.Name() == dependencies[i].Name {
+				subChartMeta := subChartAccessor.MetadataAsMap()
+				if appVersion, ok := subChartMeta["appVersion"].(string); ok {
+					dependencies[i].AppVersion = appVersion
+				}
 				break
 			}
 		}
@@ -117,7 +140,7 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 	return dependencies, nil
 }
 
-func tags(values *chartutil.Values, verbose bool) map[string]interface{} {
+func tags(values *common.Values, verbose bool) map[string]interface{} {
 	// Get the list of "tags" specified in the values...
 	// (locally-provided values only; values coming from server are not considered)
 	if verbose {
@@ -130,7 +153,7 @@ func tags(values *chartutil.Values, verbose bool) map[string]interface{} {
 	}
 	if verbose {
 		for k, v := range providedTags {
-			log.Info(2, fmt.Sprintf("found tag \"%s: %s\"", k, fmt.Sprint(v)))
+			log.Info(2, "found tag \"%s: %s\"", k, fmt.Sprint(v))
 		}
 	}
 	return providedTags

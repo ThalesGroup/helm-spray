@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helm Spray - Web GUI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Helm Spray</h1>
+        <nav>
+            <button class="tab-btn active" data-tab="charts">Chart Explorer</button>
+            <button class="tab-btn" data-tab="spray">Spray Execution</button>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Chart Explorer Tab -->
+        <div id="charts" class="tab-content active">
+            <div class="panel">
+                <h2>Available Charts</h2>
+                <button id="refresh-charts" class="btn">Refresh</button>
+                <div id="chart-list" class="chart-list"></div>
+            </div>
+
+            <div class="panel">
+                <h2>Chart Details</h2>
+                <div id="chart-details">
+                    <p class="placeholder">Select a chart to view details</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spray Execution Tab -->
+        <div id="spray" class="tab-content">
+            <div class="panel">
+                <h2>Spray Configuration</h2>
+                <form id="spray-form">
+                    <div class="form-group">
+                        <label for="chart-name">Chart Name:</label>
+                        <input type="text" id="chart-name" name="chartName" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="namespace">Namespace:</label>
+                        <input type="text" id="namespace" name="namespace" value="default">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="targets">Targets (comma-separated):</label>
+                        <input type="text" id="targets" name="targets" placeholder="e.g., subchart1,subchart2">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="excludes">Excludes (comma-separated):</label>
+                        <input type="text" id="excludes" name="excludes" placeholder="e.g., subchart3">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="value-files">Value Files (comma-separated):</label>
+                        <input type="text" id="value-files" name="valueFiles" placeholder="e.g., values.yaml,custom.yaml">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="set-values">Set Values (comma-separated):</label>
+                        <input type="text" id="set-values" name="values" placeholder="e.g., key1=val1,key2=val2">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="timeout">Timeout (seconds):</label>
+                        <input type="number" id="timeout" name="timeout" value="300">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="prefix-releases">Prefix Releases:</label>
+                        <input type="text" id="prefix-releases" name="prefixReleases">
+                    </div>
+
+                    <div class="form-group checkboxes">
+                        <label><input type="checkbox" name="createNamespace"> Create Namespace</label>
+                        <label><input type="checkbox" name="resetValues"> Reset Values</label>
+                        <label><input type="checkbox" name="reuseValues"> Reuse Values</label>
+                        <label><input type="checkbox" name="force"> Force</label>
+                        <label><input type="checkbox" name="dryRun"> Dry Run</label>
+                        <label><input type="checkbox" name="verbose"> Verbose</label>
+                        <label><input type="checkbox" name="debug"> Debug</label>
+                    </div>
+
+                    <button type="submit" class="btn primary">Start Spray</button>
+                </form>
+            </div>
+
+            <div class="panel">
+                <h2>Execution Log</h2>
+                <div id="log-output" class="log-output"></div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
