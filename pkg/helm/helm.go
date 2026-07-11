@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/gemalto/helm-spray/v4/internal/log"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"runtime"
@@ -81,45 +80,64 @@ func List(level int, namespace string, debug bool) (map[string]Release, error) {
 	return releasesMap, nil
 }
 
+// UpgradeOptions groups the parameters of UpgradeWithValues.
+type UpgradeOptions struct {
+	Level           int
+	Namespace       string
+	CreateNamespace bool
+	ReleaseName     string
+	ChartPath       string
+	ResetValues     bool
+	ReuseValues     bool
+	ValueFiles      []string
+	ValuesSet       []string
+	ValuesSetString []string
+	ValuesSetFile   []string
+	Force           bool
+	Timeout         int
+	DryRun          bool
+	Debug           bool
+}
+
 // UpgradeWithValues ...
-func UpgradeWithValues(level int, namespace string, createNamespace bool, releaseName string, chartPath string, resetValues bool, reuseValues bool, valueFiles []string, valuesSet []string, valuesSetString []string, valuesSetFile []string, force bool, timeout int, dryRun bool, debug bool) (UpgradedRelease, error) {
+func UpgradeWithValues(opts UpgradeOptions) (UpgradedRelease, error) {
 	// Prepare parameters...
-	var myargs = []string{"upgrade", "--install", releaseName, chartPath, "--namespace", namespace, "--timeout", strconv.Itoa(timeout) + "s", "-o", "json"}
-	for _, v := range valuesSet {
+	var myargs = []string{"upgrade", "--install", opts.ReleaseName, opts.ChartPath, "--namespace", opts.Namespace, "--timeout", strconv.Itoa(opts.Timeout) + "s", "-o", "json"}
+	for _, v := range opts.ValuesSet {
 		myargs = append(myargs, "--set")
 		myargs = append(myargs, v)
 	}
-	for _, v := range valuesSetString {
+	for _, v := range opts.ValuesSetString {
 		myargs = append(myargs, "--set-string")
 		myargs = append(myargs, v)
 	}
-	for _, v := range valuesSetFile {
+	for _, v := range opts.ValuesSetFile {
 		myargs = append(myargs, "--set-file")
 		myargs = append(myargs, v)
 	}
-	for _, v := range valueFiles {
+	for _, v := range opts.ValueFiles {
 		myargs = append(myargs, "-f")
 		myargs = append(myargs, v)
 	}
-	if resetValues {
+	if opts.ResetValues {
 		myargs = append(myargs, "--reset-values")
 	}
-	if reuseValues {
+	if opts.ReuseValues {
 		myargs = append(myargs, "--reuse-values")
 	}
-	if force {
+	if opts.Force {
 		myargs = append(myargs, "--force")
 	}
-	if dryRun {
+	if opts.DryRun {
 		myargs = append(myargs, "--dry-run")
 	}
-	if createNamespace {
+	if opts.CreateNamespace {
 		myargs = append(myargs, "--create-namespace")
 	}
 
 	// Run the upgrade command
-	if debug {
-		log.Info(level, "running helm command for \"%s\": %v", releaseName, myargs)
+	if opts.Debug {
+		log.Info(opts.Level, "running helm command for \"%s\": %v", opts.ReleaseName, myargs)
 	}
 	cmd := exec.Command("helm", myargs...)
 	cmdOutput := &bytes.Buffer{}
@@ -127,8 +145,8 @@ func UpgradeWithValues(level int, namespace string, createNamespace bool, releas
 	cmd.Stdout = cmdOutput
 	err := cmd.Run()
 	output := cmdOutput.Bytes()
-	if debug {
-		log.Info(level, "helm command for \"%s\" returned:\n%s", releaseName, string(output))
+	if opts.Debug {
+		log.Info(opts.Level, "helm command for \"%s\" returned:\n%s", opts.ReleaseName, string(output))
 	}
 	if err != nil {
 		return UpgradedRelease{}, err
@@ -145,7 +163,7 @@ func UpgradeWithValues(level int, namespace string, createNamespace bool, releas
 
 // Fetch ...
 func Fetch(chart string, version string) (string, error) {
-	tempDir, err := ioutil.TempDir("", "spray-")
+	tempDir, err := os.MkdirTemp("", "spray-")
 	if err != nil {
 		return "", err
 	}
