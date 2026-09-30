@@ -3,7 +3,9 @@
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -80,68 +82,7 @@ func NewRootCmd() *cobra.Command {
 		Long:         globalUsage,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-
-			if len(args) == 0 {
-				return errors.New("this command needs at least 1 argument: chart name")
-			} else if len(args) > 1 {
-				return errors.New("this command accepts only 1 argument: chart name")
-			}
-
-			s.ChartName = args[0]
-
-			if s.ChartVersion != "" {
-				if strings.HasSuffix(s.ChartName, "tgz") {
-					return errors.New("cannot use --version together with chart archive")
-				}
-
-				if _, err := os.Stat(s.ChartName); err == nil {
-					return errors.New("cannot use --version together with chart directory")
-				}
-
-				if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
-					return errors.New("cannot use --version together with chart HTTP(S) URL")
-				}
-			}
-
-			if s.PrefixReleasesWithNamespace == true && s.PrefixReleases != "" {
-				return errors.New("cannot use both --prefix-releases and --prefix-releases-with-namespace together")
-			}
-
-			if len(s.Targets) > 0 && len(s.Excludes) > 0 {
-				return errors.New("cannot use both --target and --exclude together")
-			}
-
-			// If chart is specified through an URL, then fetch it from the URL.
-			if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
-				if s.ChartVersion != "" {
-					log.Info(1, "fetching chart from URL \"%s\" with version \"%s\"...", s.ChartName, s.ChartVersion)
-				} else {
-					log.Info(1, "fetching chart from URL \"%s\"...", s.ChartName)
-				}
-				var err error
-				fetchedChartName, err := helm.Fetch(s.ChartName, s.ChartVersion)
-				if err != nil {
-					return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
-				}
-				s.ChartName = fetchedChartName
-			} else if _, err := os.Stat(s.ChartName); err != nil {
-				// If local file (or directory) does not exist, then fetch it from a repo.
-				if s.ChartVersion != "" {
-					log.Info(1, "fetching chart \"%s\" from repos with version \"%s\"...", s.ChartName, s.ChartVersion)
-				} else {
-					log.Info(1, "fetching chart \"%s\" from repos...", s.ChartName)
-				}
-				var err error
-				fetchedChartName, err := helm.Fetch(s.ChartName, s.ChartVersion)
-				if err != nil {
-					return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
-				}
-				s.ChartName = fetchedChartName
-			} else {
-				log.Info(1, "processing chart from local file or directory \"%s\"...", s.ChartName)
-			}
-
-			return s.Spray()
+			return run(s, args)
 		},
 	}
 
@@ -164,6 +105,96 @@ func NewRootCmd() *cobra.Command {
 	f.BoolVarP(&s.Verbose, "verbose", "v", false, "enable spray verbose output")
 	f.BoolVar(&s.Debug, "debug", false, "enable helm debug output (also include spray verbose output)")
 
+	applyHelmEnv(s)
+
+	return cmd
+}
+
+// run validates the CLI arguments and flags, resolves the chart, and launches the spray.
+func run(s *helmspray.Spray, args []string) error {
+	if err := validateArgs(args); err != nil {
+		return err
+	}
+	s.ChartName = args[0]
+
+	if err := validateVersionFlag(s); err != nil {
+		return err
+	}
+
+	if s.PrefixReleasesWithNamespace == true && s.PrefixReleases != "" {
+		return errors.New("cannot use both --prefix-releases and --prefix-releases-with-namespace together")
+	}
+
+	if len(s.Targets) > 0 && len(s.Excludes) > 0 {
+		return errors.New("cannot use both --target and --exclude together")
+	}
+
+	if err := resolveChart(s); err != nil {
+		return err
+	}
+
+	return s.Spray()
+}
+
+func validateArgs(args []string) error {
+	if len(args) == 0 {
+		return errors.New("this command needs at least 1 argument: chart name")
+	} else if len(args) > 1 {
+		return errors.New("this command accepts only 1 argument: chart name")
+	}
+	return nil
+}
+
+func validateVersionFlag(s *helmspray.Spray) error {
+	if s.ChartVersion == "" {
+		return nil
+	}
+	if strings.HasSuffix(s.ChartName, "tgz") {
+		return errors.New("cannot use --version together with chart archive")
+	}
+	if _, err := os.Stat(s.ChartName); err == nil {
+		return errors.New("cannot use --version together with chart directory")
+	}
+	if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") {
+		return errors.New("cannot use --version together with chart HTTP(S) URL")
+	}
+	return nil
+}
+
+// resolveChart fetches the chart from a URL or a repo when needed, updating s.ChartName.
+func resolveChart(s *helmspray.Spray) error {
+	// If chart is specified through an URL, then fetch it from the URL.
+	if strings.HasPrefix(s.ChartName, "http://") || strings.HasPrefix(s.ChartName, "https://") || strings.HasPrefix(s.ChartName, "oci://") {
+		if s.ChartVersion != "" {
+			log.Info(1, "fetching chart from URL \"%s\" with version \"%s\"...", s.ChartName, s.ChartVersion)
+		} else {
+			log.Info(1, "fetching chart from URL \"%s\"...", s.ChartName)
+		}
+		fetchedChartName, err := helm.Fetch(s.ChartName, s.ChartVersion)
+		if err != nil {
+			return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
+		}
+		s.ChartName = fetchedChartName
+	} else if _, err := os.Stat(s.ChartName); err != nil {
+		// If local file (or directory) does not exist, then fetch it from a repo.
+		if s.ChartVersion != "" {
+			log.Info(1, "fetching chart \"%s\" from repos with version \"%s\"...", s.ChartName, s.ChartVersion)
+		} else {
+			log.Info(1, "fetching chart \"%s\" from repos...", s.ChartName)
+		}
+		fetchedChartName, err := helm.Fetch(s.ChartName, s.ChartVersion)
+		if err != nil {
+			return fmt.Errorf("fetching chart %s with version %s: %w", s.ChartName, s.ChartVersion, err)
+		}
+		s.ChartName = fetchedChartName
+	} else {
+		log.Info(1, "processing chart from local file or directory \"%s\"...", s.ChartName)
+	}
+	return nil
+}
+
+// applyHelmEnv applies the HELM_DEBUG and HELM_NAMESPACE environment variables transmitted by helm.
+func applyHelmEnv(s *helmspray.Spray) {
 	// When called through helm, debug mode is transmitted through the HELM_DEBUG envvar
 	helmDebug := os.Getenv("HELM_DEBUG")
 	if helmDebug == "1" || strings.EqualFold(helmDebug, "true") || strings.EqualFold(helmDebug, "on") {
@@ -180,6 +211,4 @@ func NewRootCmd() *cobra.Command {
 	} else {
 		s.Namespace = "default"
 	}
-
-	return cmd
 }
