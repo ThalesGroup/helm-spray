@@ -100,7 +100,7 @@ func (s *Spray) Spray() error {
 
 	// Starting the processing...
 	if len(releasePrefix) > 0 {
-		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases releasePrefix \"%s-\"", s.ChartName, s.Namespace, releasePrefix)
+		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\", with releases prefix \"%s\"", s.ChartName, s.Namespace, releasePrefix)
 	} else {
 		log.Info(1, "deploying solution chart \"%s\" in namespace \"%s\"", s.ChartName, s.Namespace)
 	}

@@ -6,7 +6,6 @@ import (
 	"github.com/gemalto/helm-spray/v4/internal/log"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
-	"reflect"
 )
 
 // Dependency ...
@@ -86,17 +85,23 @@ func Get(chart *chart.Chart, values *chartutil.Values, targets []string, exclude
 
 		weightInteger := 0
 		// Depending on the configuration of the json parser, integer can be returned either as Float64 or json.Number
-		if reflect.TypeOf(weightJson).String() == "json.Number" {
-			w, err := weightJson.(json.Number).Int64()
+		// Integers provided through '--set' are parsed by helm as int64
+		// An empty weight is returned as nil and falls into the default case
+		switch w := weightJson.(type) {
+		case json.Number:
+			w64, err := w.Int64()
 			if err != nil {
 				return nil, fmt.Errorf("computing weight value for sub-chart \"%s\": %w", dependencies[i].UsedName, err)
 			}
+			weightInteger = int(w64)
+
+		case float64:
 			weightInteger = int(w)
 
-		} else if reflect.TypeOf(weightJson).String() == "float64" {
-			weightInteger = int(weightJson.(float64))
+		case int64:
+			weightInteger = int(w)
 
-		} else {
+		default:
 			return nil, fmt.Errorf("computing weight value for sub-chart \"%s\", value shall be an integer", dependencies[i].UsedName)
 		}
 
