@@ -49,7 +49,7 @@ Helm Spray does not support Helm Conditions, but supports Helm Tags, with some r
 
 To check the generated manifests of a release without installing the chart,
 the '--debug' and '--dry-run' flags can be combined. This will still require a
-round-trip to the Tiller server.
+round-trip to the Kubernetes cluster.
 
 There are four different ways you can express the chart you want to install:
 
@@ -64,7 +64,7 @@ of that chart unless you also supply a version number with the '--version' flag.
 To see the list of installed releases, use 'helm list'.
 
 To see the list of chart repositories, use 'helm repo list'. To search for
-charts in a repository, use 'helm search'.
+charts in a repository, use 'helm search repo'.
 `
 )
 
